@@ -1,0 +1,31 @@
+# Segredos — NUNCA versionar. O template fica em .env.example.
+.env
+.env.local
+
+# Ambientes virtuais Python (coletor-nativo/venv tem ~116 MB)
+venv/
+.venv/
+
+# Bytecode Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Logs de execução (coletor.log, coletor-erro.log)
+*.log
+
+# Capturas de tela de diagnóstico do Playwright
+diagnostico.png
+
+# macOS
+.DS_Store
+
+# Configuração local do Claude Code (pessoal, não compartilhada)
+.claude/settings.local.json
+
+# Editores
+.idea/
+.vscode/
+
+# Node (caso o painel admin ganhe build step no futuro)
+node_modules/

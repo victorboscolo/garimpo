@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Garimpo — Painel de Revisão</title>
+<style>
+  :root {
+    --stone-50: #F3F0EA;
+    --stone-100: #E8E3D9;
+    --stone-200: #D8D0C0;
+    --stone-700: #4A4438;
+    --stone-900: #2B2721;
+    --ink: #232019;
+
+    --excepcional: #B8862E;
+    --excepcional-bg: #FBF1DD;
+    --excelente: #4F7A5C;
+    --excelente-bg: #E9F2EB;
+    --boa: #4B7FA6;
+    --boa-bg: #E7F0F6;
+    --comum: #8A7E5C;
+    --comum-bg: #F1EDDF;
+    --pouco: #A65B4B;
+    --pouco-bg: #F6E9E6;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--stone-50);
+    color: var(--ink);
+    font-family: -apple-system, "SF Pro Text", "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  header {
+    padding: 28px 32px 20px;
+    border-bottom: 1px solid var(--stone-200);
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .brand {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 26px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  .brand .accent { color: var(--excepcional); }
+
+  .subtitle {
+    font-size: 13px;
+    color: var(--stone-700);
+    margin-top: 2px;
+  }
+
+  .tabs {
+    display: flex;
+    gap: 4px;
+  }
+
+  .tab {
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid var(--stone-200);
+    background: white;
+    color: var(--stone-700);
+  }
+
+  .tab.active {
+    background: var(--stone-900);
+    color: var(--stone-50);
+    border-color: var(--stone-900);
+  }
+
+  main {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 28px 32px 80px;
+  }
+
+  .status-line {
+    font-size: 13px;
+    color: var(--stone-700);
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .status-line button {
+    background: none;
+    border: 1px solid var(--stone-200);
+    border-radius: 8px;
+    padding: 4px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    color: var(--stone-700);
+  }
+
+  .card {
+    background: white;
+    border: 1px solid var(--stone-200);
+    border-radius: 14px;
+    padding: 20px 22px;
+    margin-bottom: 14px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 16px;
+    align-items: start;
+  }
+
+  .card-main { min-width: 0; }
+
+  .card-top {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+    flex-wrap: wrap;
+  }
+
+  .parceiro-nome {
+    font-size: 17px;
+    font-weight: 600;
+  }
+
+  .programa-tag {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--stone-700);
+    background: var(--stone-100);
+    padding: 2px 8px;
+    border-radius: 6px;
+  }
+
+  .origem-tag {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-weight: 500;
+  }
+  .origem-COLETOR { background: var(--boa-bg); color: var(--boa); }
+  .origem-MANUAL { background: var(--comum-bg); color: var(--comum); }
+  .origem-IMPORTACAO { background: var(--stone-100); color: var(--stone-700); }
+
+  .coletado-em {
+    font-size: 12px;
+    color: var(--stone-700);
+    margin-bottom: 8px;
+  }
+
+  .pontuacao {
+    font-size: 14px;
+    color: var(--stone-700);
+    margin-bottom: 10px;
+  }
+
+  .pontuacao b { color: var(--ink); }
+
+  .categoria-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 8px;
+    margin-bottom: 8px;
+  }
+
+  .justificativa {
+    font-size: 13px;
+    color: var(--stone-700);
+    line-height: 1.5;
+    max-width: 60ch;
+  }
+
+  .loading-inline {
+    font-size: 12px;
+    color: var(--stone-700);
+    font-style: italic;
+  }
+
+  .actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 110px;
+  }
+
+  button.acao {
+    border: none;
+    border-radius: 9px;
+    padding: 9px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .btn-aprovar {
+    background: var(--excelente);
+    color: white;
+  }
+  .btn-aprovar:hover { background: #3f6549; }
+
+  .btn-rejeitar {
+    background: white;
+    color: var(--pouco);
+    border: 1px solid var(--pouco);
+  }
+  .btn-rejeitar:hover { background: var(--pouco-bg); }
+
+  .status-pill {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    padding: 5px 10px;
+    border-radius: 7px;
+    text-align: center;
+  }
+  .status-APROVADA { background: var(--excelente-bg); color: var(--excelente); }
+  .status-REJEITADA { background: var(--pouco-bg); color: var(--pouco); }
+
+  .empty-state {
+    text-align: center;
+    padding: 80px 20px;
+    color: var(--stone-700);
+  }
+
+  .empty-state .big { font-size: 40px; margin-bottom: 8px; }
+
+  a.link-origem {
+    font-size: 12px;
+    color: var(--boa);
+    text-decoration: none;
+  }
+  a.link-origem:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="brand">Garimpo <span class="accent">Promoções</span></div>
+    <div class="subtitle">Painel de revisão do Motor de Análise V1</div>
+  </div>
+  <div class="tabs">
+    <div class="tab active" data-filtro="PENDENTE">Pendentes</div>
+    <div class="tab" data-filtro="APROVADA">Aprovadas</div>
+    <div class="tab" data-filtro="REJEITADA">Rejeitadas</div>
+    <div class="tab" data-filtro="">Todas</div>
+  </div>
+</header>
+
+<main>
+  <div class="status-line">
+    <span id="contador">Carregando…</span>
+    <button onclick="carregar()">↻ Atualizar</button>
+    <button onclick="reprocessarTodas()">⚙ Reprocessar tudo</button>
+  </div>
+  <div id="lista"></div>
+</main>
+
+<script>
+const API_BASE = "/api/v1/promocoes";
+let filtroAtual = "PENDENTE";
+
+const CATEGORIA_INFO = {
+  EXCEPCIONAL:     { label: "🔥 Excepcional",     cor: "excepcional" },
+  EXCELENTE:       { label: "⭐ Excelente",        cor: "excelente" },
+  BOA:             { label: "👍 Boa",              cor: "boa" },
+  COMUM:           { label: "⚠️ Comum",            cor: "comum" },
+  POUCO_ATRATIVA:  { label: "❌ Pouco atrativa",   cor: "pouco" },
+};
+
+document.querySelectorAll(".tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    tab.classList.add("active");
+    filtroAtual = tab.dataset.filtro;
+    carregar();
+  });
+});
+
+async function carregar() {
+  const lista = document.getElementById("lista");
+  const contador = document.getElementById("contador");
+  lista.innerHTML = "";
+  contador.textContent = "Carregando…";
+
+  const url = filtroAtual
+    ? `${API_BASE}?status=${filtroAtual}`
+    : `${API_BASE}`;
+
+  let promocoes;
+  try {
+    const resp = await fetch(url);
+    promocoes = await resp.json();
+  } catch (e) {
+    contador.textContent = "Erro ao carregar. A API está rodando em localhost:8000?";
+    return;
+  }
+
+  if (promocoes.length === 0) {
+    contador.textContent = "0 promoções";
+    lista.innerHTML = `<div class="empty-state"><div class="big">🔍</div>Nada por aqui ainda.</div>`;
+    return;
+  }
+
+  contador.textContent = `${promocoes.length} promoç${promocoes.length === 1 ? "ão" : "ões"}`;
+
+  for (const p of promocoes) {
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `
+      <div class="card-main">
+        <div class="card-top">
+          <span class="parceiro-nome">${p.parceiro_nome}</span>
+          <span class="programa-tag">${p.programa_nome}</span>
+          <span class="origem-tag origem-${p.origem}">${formatOrigem(p)}</span>
+        </div>
+        <div class="pontuacao"><b>${p.pontuacao}</b> ${formatUnidade(p.unidade_pontuacao)}</div>
+        <div class="coletado-em">Coletado em ${formatData(p.created_at)}</div>
+        <div class="classificacao-slot"><span class="loading-inline">Carregando avaliação…</span></div>
+        <a class="link-origem" href="${p.url_origem}" target="_blank">Ver oferta original ↗</a>
+      </div>
+      <div class="actions" id="actions-${p.id}">
+        ${renderAcoes(p)}
+      </div>
+    `;
+    lista.appendChild(card);
+    carregarClassificacao(p.id, card.querySelector(".classificacao-slot"));
+  }
+}
+
+function formatUnidade(unidade) {
+  if (unidade === "pontos_por_real") return "pontos por R$ 1";
+  if (unidade === "pontos_por_dolar") return "pontos por U$ 1";
+  return unidade;
+}
+
+function formatOrigem(p) {
+  if (p.origem === "COLETOR") return "📥 " + (p.origem_detalhe || "Coletor");
+  if (p.origem === "MANUAL") return "✍️ Manual";
+  if (p.origem === "IMPORTACAO") return "📄 Importação";
+  return p.origem;
+}
+
+function formatData(isoString) {
+  const d = new Date(isoString);
+  return d.toLocaleString("pt-BR", {
+    day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit",
+  });
+}
+
+async function reprocessarTodas() {
+  if (!confirm("Reprocessar todas as promoções pendentes/aprovadas com o motor atual? Pode levar alguns segundos.")) return;
+  const contador = document.getElementById("contador");
+  contador.textContent = "Reprocessando…";
+  try {
+    const resp = await fetch(`${API_BASE}/reclassificar-todas`, { method: "POST" });
+    const resultado = await resp.json();
+    alert(`Reprocessado: ${resultado.processadas} de ${resultado.total} (${resultado.erros} erros).`);
+  } catch (e) {
+    alert("Erro ao reprocessar. A API está rodando?");
+  }
+  carregar();
+}
+
+function renderAcoes(p) {
+  if (p.status === "PENDENTE") {
+    return `
+      <button class="acao btn-aprovar" onclick="aprovar('${p.id}')">Aprovar</button>
+      <button class="acao btn-rejeitar" onclick="rejeitar('${p.id}')">Rejeitar</button>
+    `;
+  }
+  if (p.status === "APROVADA" || p.status === "REJEITADA") {
+    return `<div class="status-pill status-${p.status}">${p.status === "APROVADA" ? "Aprovada" : "Rejeitada"}</div>`;
+  }
+  return `<div class="status-pill">${p.status}</div>`;
+}
+
+async function carregarClassificacao(promocaoId, slotEl) {
+  try {
+    const resp = await fetch(`${API_BASE}/${promocaoId}/classificacoes`);
+    const classificacoes = await resp.json();
+    const ativa = classificacoes.find(c => c.ativa) || classificacoes[0];
+    if (!ativa) {
+      slotEl.innerHTML = `<span class="loading-inline">Sem classificação ainda.</span>`;
+      return;
+    }
+    const info = CATEGORIA_INFO[ativa.categoria] || { label: ativa.categoria, cor: "comum" };
+    slotEl.innerHTML = `
+      <div class="categoria-badge" style="background: var(--${info.cor}-bg); color: var(--${info.cor});">
+        ${info.label} · nota ${Number(ativa.nota).toFixed(0)}
+      </div>
+      <div class="justificativa">${ativa.justificativa}</div>
+    `;
+  } catch (e) {
+    slotEl.innerHTML = `<span class="loading-inline">Erro ao carregar avaliação.</span>`;
+  }
+}
+
+async function aprovar(id) {
+  await fetch(`${API_BASE}/${id}/aprovar`, { method: "POST" });
+  carregar();
+}
+
+async function rejeitar(id) {
+  const motivo = prompt("Motivo da rejeição:");
+  if (motivo === null) return; // cancelou
+  await fetch(`${API_BASE}/${id}/rejeitar`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ motivo_rejeicao: motivo || "Sem motivo especificado" }),
+  });
+  carregar();
+}
+
+carregar();
+</script>
+
+</body>
+</html>
