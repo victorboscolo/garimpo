@@ -31,6 +31,7 @@ class PromocaoOut(BaseModel):
     titulo: str
     pontuacao: Decimal
     unidade_pontuacao: str
+    pontuacao_e_teto: bool = False
     disponibilidade: str
     status: str
     motivo_rejeicao: str | None = None
@@ -112,4 +113,6 @@ class PromocaoIngerirIn(BaseModel):
     qual_clube: str | None = None
     requer_cupom: bool = False
     cupom: str | None = None
+    pontuacao_e_teto: bool = False
+    codigo_externo: str | None = None
     origem_detalhe: str

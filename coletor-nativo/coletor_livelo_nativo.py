@@ -54,6 +54,12 @@ class PromocaoBruta:
     qual_clube: str | None = None
     requer_cupom: bool = False
     cupom: str | None = None
+    # "Ate X pontos" e um teto promocional, nao um valor garantido. O valor
+    # coletado continua sendo X; esta marca diz que ele e um limite.
+    pontuacao_e_teto: bool = False
+    # Codigo da variante na URL. Um mesmo slug pode ter ofertas diferentes:
+    # beach-park/BPK sao os Hoteis e beach-park/BHP os Ingressos.
+    codigo_externo: str | None = None
 
 
 def _extrair_nome_da_url(href: str) -> str:
@@ -65,11 +71,30 @@ def _extrair_nome_da_url(href: str) -> str:
     return slug.replace("-", " ").title()
 
 
+def _extrair_codigo_da_url(href: str) -> str | None:
+    """Codigo da variante, o ultimo segmento da URL.
+    Ex: '/juntar-pontos/parceiros/beach-park/BPK' -> 'BPK'
+
+    Sem esse codigo, duas ofertas distintas do mesmo slug virariam o mesmo
+    parceiro e o motor usaria uma como historico da outra. URL fora do padrao
+    devolve None em vez de quebrar a coleta.
+    """
+    partes = href.strip().rstrip("/").split("/")
+    if len(partes) < 2 or partes[-2] == "parceiros":
+        return None
+    # A Livelo serve alguns hrefs com espaco no fim ('/klubi-auto/AUT '):
+    # sem limpar, 'AUT ' viraria um parceiro diferente de 'AUT'.
+    return partes[-1].strip() or None
+
+
 def _parsear_card(texto: str, href: str) -> PromocaoBruta | None:
     m_pontos = PADRAO_PONTOS.search(texto)
     if not m_pontos:
         return None
-    _, valor, moeda, base = m_pontos.groups()
+    # Quando o card tem variante de Clube, ha duas pontuacoes e a primeira e
+    # sempre a de qualquer cliente — verificado nos 15 casos em 13/08/2026.
+    ate, valor, moeda, base = m_pontos.groups()
+    e_teto = ate is not None
 
     nome = _extrair_nome_da_url(href)
 
@@ -82,14 +107,18 @@ def _parsear_card(texto: str, href: str) -> PromocaoBruta | None:
 
     url_completa = f"https://www.livelo.com.br{href}" if href.startswith("/") else href
 
+    prefixo_teto = "Até " if e_teto else ""
+
     return PromocaoBruta(
         programa_nome="Livelo",
         parceiro_nome_bruto=nome,
-        titulo=f"{nome} - {valor} pontos por {moeda} {base}",
+        titulo=f"{nome} - {prefixo_teto}{valor} pontos por {moeda} {base}",
         url_origem=url_completa,
         pontuacao=Decimal(valor),
         unidade_pontuacao=UNIDADE_POR_MOEDA.get(moeda, "pontos_por_real"),
         regulamento_texto=descricao,
+        pontuacao_e_teto=e_teto,
+        codigo_externo=_extrair_codigo_da_url(href),
     )
 
 
@@ -134,7 +163,10 @@ async def coletar() -> list[PromocaoBruta]:
             if item is None:
                 continue
 
-            chave = f"{item.parceiro_nome_bruto}|{item.pontuacao}|{item.unidade_pontuacao}"
+            # O codigo entra na chave: sem ele, duas variantes do mesmo slug
+            # com a mesma pontuacao (ex: beach-park/BPK e /BHP) seriam tratadas
+            # como duplicata e uma sumiria em silencio.
+            chave = f"{item.parceiro_nome_bruto}|{item.codigo_externo}|{item.pontuacao}|{item.unidade_pontuacao}"
             if chave in vistos:
                 continue
             vistos.add(chave)
@@ -163,6 +195,8 @@ async def enviar_para_api(promocoes: list[PromocaoBruta]) -> None:
                 "qual_clube": p.qual_clube,
                 "requer_cupom": p.requer_cupom,
                 "cupom": p.cupom,
+                "pontuacao_e_teto": p.pontuacao_e_teto,
+                "codigo_externo": p.codigo_externo,
                 "origem_detalhe": "COLETOR_NATIVO_LIVELO",
             }
             try:

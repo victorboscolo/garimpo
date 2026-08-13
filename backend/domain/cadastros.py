@@ -69,6 +69,15 @@ class Parceiro(Base):
     categoria_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("categorias.id"), nullable=True)
     nome: Mapped[str] = mapped_column(String(200), nullable=False)
     nome_normalizado: Mapped[str] = mapped_column(String(200), nullable=False)
+    # Código da variante no programa de origem. Um mesmo slug da Livelo pode
+    # ter ofertas distintas (beach-park/BPK são os Hotéis, /BHP os Ingressos):
+    # sem isso, as duas viram um parceiro só e o motor usa o histórico de uma
+    # como se fosse da outra.
+    codigo_externo: Mapped[str | None] = mapped_column(String(20), index=True)
+    # Nome legível para a tela, separado de `nome` de propósito: `nome` entra na
+    # identidade usada na ingestão e no hash de dedup, então renomear ali faria
+    # a próxima coleta não reconhecer o parceiro e duplicar o histórico.
+    nome_exibicao: Mapped[str | None] = mapped_column(String(200))
     ativo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

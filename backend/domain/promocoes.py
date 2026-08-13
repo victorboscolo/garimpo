@@ -38,6 +38,11 @@ class Promocao(Base):
     pontuacao: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     unidade_pontuacao: Mapped[str] = mapped_column(String(50), nullable=False)
 
+    # "Até X pontos": o valor é um teto promocional, não uma garantia. O valor
+    # em `pontuacao` continua sendo X — esta marca diz que ele é um limite, e
+    # o motor a usa para reduzir a confiabilidade dos dados.
+    pontuacao_e_teto: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
     requer_clube: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     qual_clube: Mapped[str | None] = mapped_column(String(100))
     requer_cupom: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -89,7 +94,11 @@ class Promocao(Base):
 
     @property
     def parceiro_nome(self) -> str:
-        return self.parceiro.nome
+        """Nome para exibição. `nome_exibicao` existe porque `nome` participa da
+        identidade do parceiro na ingestão — renomear lá quebraria o
+        reconhecimento da oferta na próxima coleta.
+        """
+        return self.parceiro.nome_exibicao or self.parceiro.nome
 
     @property
     def programa_nome(self) -> str:

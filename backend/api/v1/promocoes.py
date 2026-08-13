@@ -199,6 +199,8 @@ async def ingerir_promocao(
         qual_clube=payload.qual_clube,
         requer_cupom=payload.requer_cupom,
         cupom=payload.cupom,
+        pontuacao_e_teto=payload.pontuacao_e_teto,
+        codigo_externo=payload.codigo_externo,
     )
     promocao = await ingerir_promocao_bruta(db, bruta, payload.origem_detalhe)
     return promocao

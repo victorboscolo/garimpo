@@ -168,6 +168,20 @@
 
   .pontuacao b { color: var(--ink); }
 
+  /* "Até X pontos" é teto anunciado, não valor garantido — precisa saltar aos
+     olhos, porque são justamente essas ofertas que lideram o ranking. */
+  .teto-tag {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 2px 6px;
+    border-radius: 5px;
+    background: var(--excepcional-bg);
+    color: var(--excepcional);
+    cursor: help;
+  }
+
   .categoria-badge {
     display: inline-flex;
     align-items: center;
@@ -486,7 +500,7 @@ async function carregar() {
           <span class="programa-tag">${esc(p.programa_nome)}</span>
           <span class="origem-tag origem-${esc(p.origem)}">${esc(formatOrigem(p))}</span>
         </div>
-        <div class="pontuacao"><b>${esc(p.pontuacao)}</b> ${esc(formatUnidade(p.unidade_pontuacao))}</div>
+        <div class="pontuacao">${p.pontuacao_e_teto ? '<span class="teto-tag" title="A Livelo anuncia &quot;Até&quot; este valor — é um teto, não uma garantia. As condições ficam na página de regras do parceiro.">até</span> ' : ""}<b>${esc(p.pontuacao)}</b> ${esc(formatUnidade(p.unidade_pontuacao))}</div>
         <div class="coletado-em">Coletado em ${formatData(p.created_at)}</div>
         ${renderClassificacao(p)}
         ${renderSelos(p)}

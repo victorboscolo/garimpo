@@ -112,6 +112,14 @@ def pilar_confiabilidade_dados(promocao: Promocao) -> float:
     """
     nota = 100.0
 
+    # "Até X pontos" é um teto: o valor real da oferta pode ser qualquer coisa
+    # abaixo dele, e as condições ficam na página de detalhe do parceiro, que o
+    # coletor ainda não visita. A pontuação não é ajustada (decisão de produto:
+    # o valor anunciado é o que se apresenta) — o que cai é a confiança de que
+    # o dado descreve a oferta por inteiro.
+    if promocao.pontuacao_e_teto:
+        nota -= 20
+
     if not promocao.regulamento_texto:
         nota -= 25
     if promocao.data_inicio is None:
