@@ -215,7 +215,9 @@
   }
   .btn-aprovar:hover { background: #3f6549; }
 
-  .btn-rejeitar {
+  /* button.acao define border:none e tem especificidade maior que .btn-rejeitar
+     sozinho — sem o seletor composto, a borda pretendida aqui não aparece. */
+  button.acao.btn-rejeitar {
     background: white;
     color: var(--pouco);
     border: 1px solid var(--pouco);
@@ -248,6 +250,121 @@
     text-decoration: none;
   }
   a.link-origem:hover { text-decoration: underline; }
+
+  /* ---- Seleção múltipla ---- */
+
+  .card { grid-template-columns: auto 1fr auto; }
+  .card.sem-selecao { grid-template-columns: 1fr auto; }
+
+  .card-sel { padding-top: 2px; }
+  .card-sel input { width: 17px; height: 17px; cursor: pointer; accent-color: var(--stone-900); }
+
+  .card.selecionado {
+    border-color: var(--stone-900);
+    box-shadow: 0 0 0 1px var(--stone-900);
+  }
+
+  .selecao-tudo {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .selecao-tudo input { width: 15px; height: 15px; cursor: pointer; accent-color: var(--stone-900); }
+
+  .barra-lote {
+    position: sticky;
+    bottom: 0;
+    margin-top: 16px;
+    background: var(--stone-900);
+    color: var(--stone-50);
+    border-radius: 12px;
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.18);
+  }
+  .barra-lote.oculta { display: none; }
+  .barra-lote .contagem { font-size: 14px; font-weight: 600; flex: 1; }
+  .barra-lote button {
+    border: none;
+    border-radius: 9px;
+    padding: 9px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .barra-lote .lote-aprovar { background: var(--excelente); color: white; }
+  .barra-lote .lote-rejeitar { background: var(--pouco); color: white; }
+  .barra-lote .lote-limpar {
+    background: transparent;
+    color: var(--stone-200);
+    border: 1px solid var(--stone-700);
+  }
+
+  /* ---- Selos e painel de detalhes ---- */
+
+  .selos { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 4px; }
+  .selo {
+    font-size: 11px;
+    font-weight: 500;
+    padding: 3px 8px;
+    border-radius: 6px;
+    background: var(--comum-bg);
+    color: var(--comum);
+  }
+
+  .toggle-detalhes {
+    background: none;
+    border: none;
+    padding: 6px 0 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--stone-700);
+    cursor: pointer;
+  }
+  .toggle-detalhes:hover { color: var(--ink); }
+
+  .detalhes {
+    margin-top: 10px;
+    padding: 14px 16px;
+    background: var(--stone-50);
+    border: 1px solid var(--stone-100);
+    border-radius: 10px;
+  }
+  .detalhes.oculto { display: none; }
+
+  .detalhes h4 {
+    margin: 0 0 10px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--stone-700);
+    font-weight: 600;
+  }
+  .detalhes h4:not(:first-child) { margin-top: 18px; }
+
+  .criterio {
+    display: grid;
+    grid-template-columns: 150px 1fr 42px;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+    font-size: 12px;
+  }
+  .criterio-nome { color: var(--stone-700); }
+  .criterio-barra { background: var(--stone-100); border-radius: 4px; height: 7px; overflow: hidden; }
+  /* display:block — um <span> inline ignora width e a barra não aparece. */
+  .criterio-preenchida { display: block; background: var(--boa); height: 100%; border-radius: 4px; }
+  .criterio-valor { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+
+  .campo { font-size: 12.5px; line-height: 1.5; margin-bottom: 7px; }
+  .campo .rotulo { color: var(--stone-700); }
+  .campo .valor { color: var(--ink); }
+  .sem-dados { font-size: 12px; color: var(--stone-700); font-style: italic; }
 </style>
 </head>
 <body>
@@ -268,10 +385,21 @@
 <main>
   <div class="status-line">
     <span id="contador">Carregando…</span>
+    <label class="selecao-tudo" id="wrap-selecao-tudo" hidden>
+      <input type="checkbox" id="selecionar-tudo" onchange="alternarTodas(this.checked)">
+      <span id="label-selecao-tudo">Selecionar todas</span>
+    </label>
     <button onclick="carregar()">↻ Atualizar</button>
     <button onclick="reprocessarTodas()">⚙ Reprocessar tudo</button>
   </div>
   <div id="lista"></div>
+
+  <div class="barra-lote oculta" id="barra-lote">
+    <span class="contagem" id="contagem-lote"></span>
+    <button class="lote-limpar" onclick="limparSelecao()">Limpar</button>
+    <button class="lote-rejeitar" onclick="rejeitarLote()">Rejeitar selecionadas</button>
+    <button class="lote-aprovar" onclick="aprovarLote()">Aprovar selecionadas</button>
+  </div>
 </main>
 
 <script>
@@ -295,11 +423,24 @@ document.querySelectorAll(".tab").forEach(tab => {
   });
 });
 
+// Ids selecionados para ação em lote. Zerado a cada carregamento da lista.
+const selecionadas = new Set();
+
+// O conteúdo vem de um site externo via coletor: escapar antes de injetar.
+function esc(valor) {
+  if (valor === null || valor === undefined) return "";
+  return String(valor)
+    .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+}
+
 async function carregar() {
   const lista = document.getElementById("lista");
   const contador = document.getElementById("contador");
   lista.innerHTML = "";
   contador.textContent = "Carregando…";
+  selecionadas.clear();
+  atualizarBarraLote();
 
   const url = filtroAtual
     ? `${API_BASE}?status=${filtroAtual}`
@@ -317,33 +458,198 @@ async function carregar() {
   if (promocoes.length === 0) {
     contador.textContent = "0 promoções";
     lista.innerHTML = `<div class="empty-state"><div class="big">🔍</div>Nada por aqui ainda.</div>`;
+    document.getElementById("wrap-selecao-tudo").hidden = true;
     return;
   }
 
-  contador.textContent = `${promocoes.length} promoç${promocoes.length === 1 ? "ão" : "ões"}`;
+  contador.textContent = `${promocoes.length} promoç${promocoes.length === 1 ? "ão" : "ões"}, ordenadas pela nota`;
+
+  const pendentes = promocoes.filter(p => p.status === "PENDENTE").length;
+  const wrapTudo = document.getElementById("wrap-selecao-tudo");
+  wrapTudo.hidden = pendentes === 0;
+  document.getElementById("label-selecao-tudo").textContent = `Selecionar todas (${pendentes})`;
+  document.getElementById("selecionar-tudo").checked = false;
 
   for (const p of promocoes) {
+    const selecionavel = p.status === "PENDENTE";
     const card = document.createElement("div");
-    card.className = "card";
+    card.className = selecionavel ? "card" : "card sem-selecao";
+    card.id = `card-${p.id}`;
     card.innerHTML = `
+      ${selecionavel ? `
+      <div class="card-sel">
+        <input type="checkbox" data-id="${p.id}" onchange="alternarUma('${p.id}', this.checked)">
+      </div>` : ""}
       <div class="card-main">
         <div class="card-top">
-          <span class="parceiro-nome">${p.parceiro_nome}</span>
-          <span class="programa-tag">${p.programa_nome}</span>
-          <span class="origem-tag origem-${p.origem}">${formatOrigem(p)}</span>
+          <span class="parceiro-nome">${esc(p.parceiro_nome)}</span>
+          <span class="programa-tag">${esc(p.programa_nome)}</span>
+          <span class="origem-tag origem-${esc(p.origem)}">${esc(formatOrigem(p))}</span>
         </div>
-        <div class="pontuacao"><b>${p.pontuacao}</b> ${formatUnidade(p.unidade_pontuacao)}</div>
+        <div class="pontuacao"><b>${esc(p.pontuacao)}</b> ${esc(formatUnidade(p.unidade_pontuacao))}</div>
         <div class="coletado-em">Coletado em ${formatData(p.created_at)}</div>
-        <div class="classificacao-slot"><span class="loading-inline">Carregando avaliação…</span></div>
-        <a class="link-origem" href="${p.url_origem}" target="_blank">Ver oferta original ↗</a>
+        ${renderClassificacao(p)}
+        ${renderSelos(p)}
+        <button class="toggle-detalhes" onclick="alternarDetalhes('${p.id}')" id="btn-det-${p.id}">▸ Ver detalhes</button>
+        <div class="detalhes oculto" id="det-${p.id}">${renderDetalhes(p)}</div>
+        <a class="link-origem" href="${esc(p.url_origem)}" target="_blank">Ver oferta original ↗</a>
       </div>
-      <div class="actions" id="actions-${p.id}">
+      <div class="actions">
         ${renderAcoes(p)}
       </div>
     `;
     lista.appendChild(card);
-    carregarClassificacao(p.id, card.querySelector(".classificacao-slot"));
   }
+}
+
+function renderClassificacao(p) {
+  const c = p.classificacao_ativa;
+  if (!c) return `<span class="loading-inline">Sem classificação ainda.</span>`;
+  const info = CATEGORIA_INFO[c.categoria] || { label: c.categoria, cor: "comum" };
+  return `
+    <div class="categoria-badge" style="background: var(--${info.cor}-bg); color: var(--${info.cor});">
+      ${info.label} · nota ${Number(c.nota).toFixed(0)}
+    </div>
+    <div class="justificativa">${esc(c.justificativa)}</div>
+  `;
+}
+
+function renderSelos(p) {
+  const selos = [];
+  if (p.requer_clube) selos.push(`🏷 Clube${p.qual_clube ? ": " + esc(p.qual_clube) : ""}`);
+  if (p.requer_cupom) selos.push(`🎫 Cupom${p.cupom ? ": " + esc(p.cupom) : ""}`);
+  if (p.disponibilidade && p.disponibilidade !== "PUBLICA") selos.push(`🔒 ${esc(p.disponibilidade)}`);
+  if (selos.length === 0) return "";
+  return `<div class="selos">${selos.map(s => `<span class="selo">${s}</span>`).join("")}</div>`;
+}
+
+const CRITERIO_LABEL = {
+  historico: "Histórico",
+  atratividade: "Atratividade",
+  amplitude: "Amplitude",
+  facilidade: "Facilidade",
+  exclusividade: "Exclusividade",
+  confiabilidade_dados: "Confiabilidade dos dados",
+};
+
+function renderDetalhes(p) {
+  const c = p.classificacao_ativa;
+  let html = "";
+
+  if (c && c.criterios_avaliados) {
+    html += `<h4>Critérios do motor</h4>`;
+    for (const [chave, label] of Object.entries(CRITERIO_LABEL)) {
+      const valor = c.criterios_avaliados[chave];
+      if (valor === undefined) continue;
+      html += `
+        <div class="criterio">
+          <span class="criterio-nome">${label}</span>
+          <span class="criterio-barra"><span class="criterio-preenchida" style="width:${Number(valor)}%"></span></span>
+          <span class="criterio-valor">${Number(valor).toFixed(0)}</span>
+        </div>`;
+    }
+    html += `<div class="campo" style="margin-top:10px">
+      <span class="rotulo">Confiança do histórico:</span>
+      <span class="valor">${esc(c.confianca_historica)}</span>
+      <span class="rotulo"> · Confiabilidade dos dados:</span>
+      <span class="valor">${Number(c.confiabilidade_dados).toFixed(0)}</span>
+    </div>`;
+  }
+
+  // Só campos preenchidos: com quase tudo vazio hoje, exibir rótulo vazio
+  // encheria a tela de nada.
+  const campos = [
+    ["Restrições", p.restricoes],
+    ["Abrangência", p.abrangencia],
+    ["Marketplace", p.marketplace_status],
+    ["Resumo do regulamento", p.regulamento_resumo],
+    ["Regulamento", p.regulamento_texto],
+    ["Início", p.data_inicio ? formatData(p.data_inicio) : null],
+    ["Fim", p.data_fim ? formatData(p.data_fim) : null],
+    ["Código", p.codigo_amigavel],
+  ].filter(([, valor]) => valor !== null && valor !== undefined && valor !== "");
+
+  html += `<h4>Dados da oferta</h4>`;
+  if (campos.length === 0) {
+    html += `<div class="sem-dados">Nenhum dado adicional coletado para esta oferta.</div>`;
+  } else {
+    html += campos.map(([rotulo, valor]) =>
+      `<div class="campo"><span class="rotulo">${rotulo}:</span> <span class="valor">${esc(valor)}</span></div>`
+    ).join("");
+  }
+
+  return html;
+}
+
+function alternarDetalhes(id) {
+  const painel = document.getElementById(`det-${id}`);
+  const botao = document.getElementById(`btn-det-${id}`);
+  const abrindo = painel.classList.contains("oculto");
+  painel.classList.toggle("oculto");
+  botao.textContent = abrindo ? "▾ Ocultar detalhes" : "▸ Ver detalhes";
+}
+
+/* ---- Seleção e ações em lote ---- */
+
+function alternarUma(id, marcada) {
+  if (marcada) selecionadas.add(id); else selecionadas.delete(id);
+  const card = document.getElementById(`card-${id}`);
+  if (card) card.classList.toggle("selecionado", marcada);
+  atualizarBarraLote();
+}
+
+function alternarTodas(marcada) {
+  document.querySelectorAll('.card-sel input[type="checkbox"]').forEach(cb => {
+    cb.checked = marcada;
+    alternarUma(cb.dataset.id, marcada);
+  });
+}
+
+function limparSelecao() {
+  document.getElementById("selecionar-tudo").checked = false;
+  alternarTodas(false);
+}
+
+function atualizarBarraLote() {
+  const barra = document.getElementById("barra-lote");
+  const n = selecionadas.size;
+  barra.classList.toggle("oculta", n === 0);
+  document.getElementById("contagem-lote").textContent =
+    `${n} promoç${n === 1 ? "ão selecionada" : "ões selecionadas"}`;
+}
+
+async function enviarLote(rota, corpo, verbo) {
+  const resp = await fetch(`${API_BASE}/${rota}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(corpo),
+  });
+  if (!resp.ok) {
+    alert(`Erro ao ${verbo} em lote (HTTP ${resp.status}).`);
+    return;
+  }
+  const r = await resp.json();
+  let msg = `${r.processadas} de ${r.solicitadas} ${verbo}.`;
+  if (r.ignoradas.length > 0) {
+    msg += `\n\n${r.ignoradas.length} ignorada(s) — já não estavam pendentes ou não foram encontradas.`;
+  }
+  alert(msg);
+  carregar();
+}
+
+async function aprovarLote() {
+  const ids = [...selecionadas];
+  if (ids.length === 0) return;
+  if (!confirm(`Aprovar ${ids.length} promoção(ões) selecionada(s)?`)) return;
+  enviarLote("aprovar-lote", { ids }, "aprovadas");
+}
+
+async function rejeitarLote() {
+  const ids = [...selecionadas];
+  if (ids.length === 0) return;
+  const motivo = prompt(`Motivo da rejeição (aplicado às ${ids.length} selecionadas):`);
+  if (motivo === null) return;
+  enviarLote("rejeitar-lote", { ids, motivo_rejeicao: motivo || "Rejeição em lote" }, "rejeitadas");
 }
 
 function formatUnidade(unidade) {
@@ -392,27 +698,6 @@ function renderAcoes(p) {
     return `<div class="status-pill status-${p.status}">${p.status === "APROVADA" ? "Aprovada" : "Rejeitada"}</div>`;
   }
   return `<div class="status-pill">${p.status}</div>`;
-}
-
-async function carregarClassificacao(promocaoId, slotEl) {
-  try {
-    const resp = await fetch(`${API_BASE}/${promocaoId}/classificacoes`);
-    const classificacoes = await resp.json();
-    const ativa = classificacoes.find(c => c.ativa) || classificacoes[0];
-    if (!ativa) {
-      slotEl.innerHTML = `<span class="loading-inline">Sem classificação ainda.</span>`;
-      return;
-    }
-    const info = CATEGORIA_INFO[ativa.categoria] || { label: ativa.categoria, cor: "comum" };
-    slotEl.innerHTML = `
-      <div class="categoria-badge" style="background: var(--${info.cor}-bg); color: var(--${info.cor});">
-        ${info.label} · nota ${Number(ativa.nota).toFixed(0)}
-      </div>
-      <div class="justificativa">${ativa.justificativa}</div>
-    `;
-  } catch (e) {
-    slotEl.innerHTML = `<span class="loading-inline">Erro ao carregar avaliação.</span>`;
-  }
 }
 
 async function aprovar(id) {

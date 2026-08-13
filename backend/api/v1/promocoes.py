@@ -2,15 +2,47 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import contains_eager
 
-from api.v1.schemas import PromocaoIngerirIn, PromocaoOut, PromocaoRejeitarIn
+from api.v1.schemas import (
+    LoteResultadoOut,
+    PromocaoAprovarLoteIn,
+    PromocaoIngerirIn,
+    PromocaoOut,
+    PromocaoRejeitarIn,
+    PromocaoRejeitarLoteIn,
+)
 from application.ingestao_service import PromocaoBrutaIn, ingerir_promocao_bruta
+from domain.motor import ENTIDADE_PROMOCAO, Classificacao
 from domain.promocoes import Promocao
 from infrastructure.db.session import get_db
 
 router = APIRouter()
+
+
+def _stmt_listagem():
+    """Listagem com a classificação ativa embutida e ordenada pela nota.
+
+    O join é explícito (e não pelo lazy="joined" do relacionamento) porque a
+    ordenação precisa referenciar a coluna `nota` diretamente. Promoção sem
+    classificação vai para o fim da lista em vez de desaparecer — daí o
+    outerjoin com NULLS LAST.
+    """
+    return (
+        select(Promocao)
+        .outerjoin(
+            Classificacao,
+            and_(
+                Classificacao.entidade_id == Promocao.id,
+                Classificacao.entidade_tipo == ENTIDADE_PROMOCAO,
+                Classificacao.ativa.is_(True),
+            ),
+        )
+        .options(contains_eager(Promocao.classificacao_ativa))
+        .order_by(Classificacao.nota.desc().nullslast(), Promocao.created_at.desc())
+    )
 
 
 @router.get("", response_model=list[PromocaoOut])
@@ -20,22 +52,22 @@ async def listar_promocoes(
     parceiro_id: uuid.UUID | None = None,
     db: AsyncSession = Depends(get_db),
 ):
-    stmt = select(Promocao)
+    stmt = _stmt_listagem()
     if status:
-        stmt = stmt.filter_by(status=status)
+        stmt = stmt.filter(Promocao.status == status)
     if programa_id:
-        stmt = stmt.filter_by(programa_id=programa_id)
+        stmt = stmt.filter(Promocao.programa_id == programa_id)
     if parceiro_id:
-        stmt = stmt.filter_by(parceiro_id=parceiro_id)
+        stmt = stmt.filter(Promocao.parceiro_id == parceiro_id)
     resultado = await db.execute(stmt)
-    return resultado.scalars().all()
+    return resultado.scalars().unique().all()
 
 
 @router.get("/pendentes", response_model=list[PromocaoOut])
 async def listar_pendentes(db: AsyncSession = Depends(get_db)):
-    stmt = select(Promocao).filter_by(status="PENDENTE")
+    stmt = _stmt_listagem().filter(Promocao.status == "PENDENTE")
     resultado = await db.execute(stmt)
-    return resultado.scalars().all()
+    return resultado.scalars().unique().all()
 
 
 @router.get("/{promocao_id}", response_model=PromocaoOut)
@@ -88,6 +120,58 @@ async def rejeitar_promocao(
     await db.commit()
     await db.refresh(promocao)
     return promocao
+
+
+async def _decidir_lote(
+    db: AsyncSession,
+    ids: list[uuid.UUID],
+    novo_status: str,
+    motivo_rejeicao: str | None = None,
+) -> LoteResultadoOut:
+    """Aplica aprovação ou rejeição a um lote, tolerando falha parcial.
+
+    Uma promoção que deixou de ser PENDENTE entre o carregamento da tela e o
+    clique é ignorada e reportada, em vez de derrubar o lote inteiro — o
+    endpoint individual devolve 409 nesse caso, o que aqui seria pior.
+    """
+    resultado = await db.execute(select(Promocao).filter(Promocao.id.in_(ids)))
+    promocoes = resultado.scalars().unique().all()
+    encontradas = {promocao.id: promocao for promocao in promocoes}
+
+    processadas = 0
+    ignoradas = []
+    agora = datetime.now(timezone.utc)
+
+    for promocao_id in ids:
+        promocao = encontradas.get(promocao_id)
+        if promocao is None:
+            ignoradas.append({"id": promocao_id, "motivo": "Promoção não encontrada."})
+            continue
+        if promocao.status != "PENDENTE":
+            ignoradas.append({"id": promocao_id, "motivo": f"Já estava em status '{promocao.status}'."})
+            continue
+
+        promocao.status = novo_status
+        promocao.aprovada_em = agora
+        if motivo_rejeicao is not None:
+            promocao.motivo_rejeicao = motivo_rejeicao
+        # TODO: promocao.aprovada_por = usuario_id_do_token
+        processadas += 1
+
+    await db.commit()
+    return LoteResultadoOut(solicitadas=len(ids), processadas=processadas, ignoradas=ignoradas)
+
+
+@router.post("/aprovar-lote", response_model=LoteResultadoOut)
+async def aprovar_lote(payload: PromocaoAprovarLoteIn, db: AsyncSession = Depends(get_db)):
+    return await _decidir_lote(db, payload.ids, novo_status="APROVADA")
+
+
+@router.post("/rejeitar-lote", response_model=LoteResultadoOut)
+async def rejeitar_lote(payload: PromocaoRejeitarLoteIn, db: AsyncSession = Depends(get_db)):
+    return await _decidir_lote(
+        db, payload.ids, novo_status="REJEITADA", motivo_rejeicao=payload.motivo_rejeicao
+    )
 
 
 @router.post("/ingerir", response_model=PromocaoOut | None)

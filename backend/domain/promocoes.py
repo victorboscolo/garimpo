@@ -6,12 +6,13 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Identity, Numeric, String, Text, func
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Identity, Numeric, String, Text, and_, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, foreign, mapped_column, relationship
 
 from infrastructure.db.base import Base
 from domain.cadastros import Parceiro, Programa
+from domain.motor import ENTIDADE_PROMOCAO, Classificacao
 
 
 class Promocao(Base):
@@ -66,6 +67,25 @@ class Promocao(Base):
     # não fazer 1 query por promoção só para mostrar o nome do parceiro).
     parceiro: Mapped["Parceiro"] = relationship("Parceiro", lazy="joined", foreign_keys=[parceiro_id])
     programa: Mapped["Programa"] = relationship("Programa", lazy="joined", foreign_keys=[programa_id])
+
+    # Classificação ativa do Motor de Análise. `classificacoes` usa referência
+    # polimórfica sem FK (ver domain/motor.py), então o join é declarado à mão.
+    # viewonly=True: este lado nunca escreve — quem cria/desativa classificação
+    # é o motor, e a integridade da referência polimórfica é responsabilidade
+    # da aplicação (RN-013), não do ORM.
+    # lazy="joined" evita lazy load: em sessão async, carregar sob demanda na
+    # hora de serializar estouraria MissingGreenlet.
+    classificacao_ativa: Mapped["Classificacao | None"] = relationship(
+        "Classificacao",
+        primaryjoin=lambda: and_(
+            foreign(Classificacao.entidade_id) == Promocao.id,
+            Classificacao.entidade_tipo == ENTIDADE_PROMOCAO,
+            Classificacao.ativa.is_(True),
+        ),
+        viewonly=True,
+        uselist=False,
+        lazy="joined",
+    )
 
     @property
     def parceiro_nome(self) -> str:

@@ -5,6 +5,20 @@ from decimal import Decimal
 from pydantic import BaseModel, ConfigDict
 
 
+class ClassificacaoResumoOut(BaseModel):
+    """Classificação ativa embutida na listagem, para o painel não precisar de
+    uma requisição por promoção só para mostrar a nota.
+    """
+    model_config = ConfigDict(from_attributes=True)
+
+    nota: Decimal
+    categoria: str
+    criterios_avaliados: dict
+    confianca_historica: str
+    confiabilidade_dados: Decimal
+    justificativa: str
+
+
 class PromocaoOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -27,9 +41,45 @@ class PromocaoOut(BaseModel):
     data_fim: datetime | None
     created_at: datetime
 
+    # Campos que já existiam no banco mas não chegavam ao painel.
+    regulamento_texto: str | None = None
+    regulamento_resumo: str | None = None
+    marketplace_status: str | None = None
+    abrangencia: str | None = None
+    restricoes: str | None = None
+    requer_clube: bool = False
+    qual_clube: str | None = None
+    requer_cupom: bool = False
+    cupom: str | None = None
+
+    classificacao_ativa: ClassificacaoResumoOut | None = None
+
 
 class PromocaoRejeitarIn(BaseModel):
     motivo_rejeicao: str
+
+
+class PromocaoAprovarLoteIn(BaseModel):
+    ids: list[uuid.UUID]
+
+
+class PromocaoRejeitarLoteIn(BaseModel):
+    ids: list[uuid.UUID]
+    motivo_rejeicao: str
+
+
+class LoteIgnoradaOut(BaseModel):
+    id: uuid.UUID
+    motivo: str
+
+
+class LoteResultadoOut(BaseModel):
+    """Lote é tolerante a falha parcial: uma promoção que saiu de PENDENTE
+    entre o carregamento da tela e o clique não derruba as demais.
+    """
+    solicitadas: int
+    processadas: int
+    ignoradas: list[LoteIgnoradaOut]
 
 
 class ClassificacaoOut(BaseModel):
