@@ -48,10 +48,18 @@ async def _media_mercado(db: AsyncSession, programa_id) -> Decimal | None:
 
 
 def _resolver_categoria(nota: float, faixas: dict) -> str:
-    for chave, intervalo in faixas.items():
-        if intervalo["min"] <= nota <= intervalo["max"]:
+    """Resolve a categoria pela faixa de maior piso que ainda cabe na nota.
+
+    Só o piso (`min`) decide. As faixas configuradas têm limites inteiros
+    (excelente até 89, excepcional a partir de 90), mas a nota é decimal —
+    comparar também contra o teto deixava 89,5 fora de todas as faixas, caindo
+    no fallback. Ordenar por piso decrescente ainda torna o resultado
+    independente da ordem das chaves, que vem alfabética do JSONB do banco.
+    """
+    for chave, intervalo in sorted(faixas.items(), key=lambda item: item[1]["min"], reverse=True):
+        if nota >= intervalo["min"]:
             return chave.upper()
-    return "COMUM"  # fallback defensivo — nunca deve ser atingido com faixas bem configuradas
+    return "POUCO_ATRATIVA"  # nota abaixo de todos os pisos
 
 
 def _montar_justificativa(criterios: dict, categoria: str, confianca_historica: str) -> str:
