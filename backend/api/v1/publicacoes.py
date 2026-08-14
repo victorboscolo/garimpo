@@ -45,6 +45,20 @@ async def ver_fila(tipo: str | None = None, db: AsyncSession = Depends(get_db)):
     }
 
 
+@router.get("/divergencias")
+async def divergencias(db: AsyncSession = Depends(get_db)):
+    """Publicações cuja categoria mudou desde o envio.
+
+    Reprocessar o motor muda notas, e o que já foi publicado não acompanha —
+    não existe despublicar no Telegram. Este relatório é a única forma de saber
+    que o canal passou a afirmar algo que o sistema não sustenta mais.
+    """
+    from application.divergencia import listar_divergencias
+
+    itens = await listar_divergencias(db)
+    return {"total": len(itens), "itens": itens}
+
+
 @router.get("/diagnostico")
 async def diagnostico(db: AsyncSession = Depends(get_db)):
     """Confere a configuração do Telegram sem publicar nada.

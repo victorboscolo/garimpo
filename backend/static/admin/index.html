@@ -661,6 +661,23 @@ async function carregarFila() {
   contador.textContent = `${dados.total} mensagem(ns) na fila · modo ${dados.modo}`;
   document.getElementById("btn-reprocessar").hidden = true;
 
+  // Divergência é silenciosa por natureza: sem este aviso, o canal segue
+  // afirmando algo que o motor já não sustenta e ninguém percebe.
+  try {
+    const div = await (await fetch("/api/v1/publicacoes/divergencias")).json();
+    if (div.total > 0) {
+      const aviso = document.createElement("div");
+      aviso.className = "aviso-config";
+      aviso.innerHTML = `
+        <b>${div.total} publicação(ões) mudaram de categoria depois de enviadas.</b><br>
+        O canal continua mostrando a avaliação antiga — não há como despublicar no Telegram.
+        <div style="margin-top:8px">` +
+        div.itens.map(i => `${esc(i.parceiro)} <span class="canal-tag">${esc(i.canal)}</span> — publicado como <b>${esc(i.categoria_publicada)}</b>, hoje é <b>${esc(i.categoria_atual)}</b>`).join("<br>") +
+        `</div>`;
+      lista.appendChild(aviso);
+    }
+  } catch (e) { /* o aviso não pode impedir a fila de aparecer */ }
+
   if (dados.total === 0) {
     lista.innerHTML = `<div class="empty-state"><div class="big">✅</div>Nada na fila. Aprove promoções para que apareçam aqui.</div>`;
     return;
