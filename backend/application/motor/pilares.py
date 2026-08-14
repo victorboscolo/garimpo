@@ -8,6 +8,7 @@ só na camada de Interpretação/justificativa, fora daqui).
 from decimal import Decimal
 
 from application.motor.historico import HistoricoFamilia
+from application.motor.percentil import percentil
 from domain.promocoes import Promocao
 
 
@@ -32,29 +33,36 @@ def pilar_historico(promocao: Promocao, historico: HistoricoFamilia) -> float:
 
 
 def pilar_historico_com_base(promocao: Promocao, base) -> float:
-    """Compara a pontuação com a base resolvida em cascata.
+    """Posição da oferta dentro da base resolvida em cascata.
 
-    Mesma curva do pilar_historico original — 1x a média vale 50, 2x vale 100 —
-    mas a média pode vir do histórico próprio, do segmento ou do mercado. Qual
-    delas foi usada fica registrado em `base.nivel` e reflete na
-    confianca_historica, para que a nota nunca esconda em que se apoiou.
+    A base pode ser o histórico do próprio parceiro, o segmento ou o mercado —
+    qual delas fica em `base.nivel` e reflete na confianca_historica, para que a
+    nota nunca esconda em que se apoiou.
+
+    A nota é o percentil, não a razão com a média. A razão saturava: com média
+    de segmento em 2 pontos, qualquer oferta acima de 4 valia 100, e 38
+    classificações estavam nesse teto.
     """
-    if base.media_ponderada is None or base.media_ponderada == 0:
+    if not base.distribuicao:
         return 50.0
-    return _clamp(float(promocao.pontuacao) / float(base.media_ponderada) * 50.0)
+    return percentil(promocao.pontuacao, base.distribuicao)
 
 
-def pilar_atratividade(promocao: Promocao, media_mercado: Decimal | None) -> float:
-    """Compara a pontuação com a média de mercado (todo o domínio/programa),
-    independente do histórico específico deste parceiro — mede quão boa é
-    a oferta em termos absolutos, não relativos ao próprio passado dele.
+def pilar_atratividade(promocao: Promocao, mercado: list | None) -> float:
+    """Posição da oferta no mercado inteiro do programa.
+
+    Independe do histórico do parceiro: mede quão boa a oferta é em termos
+    absolutos, não relativos ao próprio passado dele.
+
+    Pela mesma razão do pilar Histórico, a nota é o percentil. A média de
+    mercado (5,48) é puxada pelos consórcios de 40 e 100 enquanto a mediana é 2,
+    e comparar contra a média numa distribuição assim era severo no meio —
+    uma oferta de 5 pontos supera 75% do mercado e tirava 46 — e cego no topo,
+    onde 33 classificações empatavam em 100.
     """
-    if media_mercado is None or media_mercado == 0:
+    if not mercado:
         return 50.0
-
-    razao = float(promocao.pontuacao) / float(media_mercado)
-    nota = razao * 50.0
-    return _clamp(nota)
+    return percentil(promocao.pontuacao, mercado)
 
 
 def pilar_amplitude(promocao: Promocao, quantidade_categorias: int) -> float:

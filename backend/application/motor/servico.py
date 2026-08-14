@@ -33,18 +33,17 @@ FAIXAS_DEFAULT = {
 }
 
 
-async def _media_mercado(db: AsyncSession, programa_id) -> Decimal | None:
-    """Média simples de pontuação de todas as promoções aprovadas/publicadas
-    do mesmo programa (proxy de 'mercado competitivo' para o pilar Atratividade).
+async def _mercado(db: AsyncSession, programa_id) -> list:
+    """Pontuações aprovadas/publicadas do programa — o 'mercado competitivo'
+    contra o qual o pilar Atratividade posiciona a oferta.
+
+    Devolve a distribuição inteira, e não a média: a nota é a posição da oferta
+    dentro dela. Ver motor/percentil.py.
     """
     stmt = select(Promocao.pontuacao).filter_by(programa_id=programa_id).filter(
         Promocao.status.in_(["APROVADA", "PUBLICADA"])
     )
-    resultado = await db.execute(stmt)
-    valores = resultado.scalars().all()
-    if not valores:
-        return None
-    return sum(valores) / len(valores)
+    return list((await db.execute(stmt)).scalars().all())
 
 
 def _resolver_categoria(nota: float, faixas: dict) -> str:
@@ -69,10 +68,15 @@ def _montar_justificativa(criterios: dict, categoria: str, confianca_historica: 
     """
     partes = [f"Classificada como {categoria.replace('_', ' ').title()}."]
 
-    if criterios["atratividade"] >= 75:
-        partes.append("Pontuação bem acima da média de mercado.")
-    elif criterios["atratividade"] <= 35:
-        partes.append("Pontuação abaixo da média de mercado.")
+    # A nota dos pilares comparativos é posição na distribuição, não razão com
+    # a média — o texto precisa dizer a mesma coisa que o número mede.
+    atratividade = criterios["atratividade"]
+    if atratividade >= 90:
+        partes.append(f"Supera {atratividade:.0f}% das ofertas do programa.")
+    elif atratividade >= 75:
+        partes.append(f"Melhor que {atratividade:.0f}% das ofertas do programa.")
+    elif atratividade <= 35:
+        partes.append(f"Abaixo de {100 - atratividade:.0f}% das ofertas do programa.")
 
     if criterios["exclusividade"] >= 95:
         partes.append("Iguala ou supera o recorde histórico deste parceiro.")
@@ -124,7 +128,7 @@ async def classificar_promocao(db: AsyncSession, promocao: Promocao) -> Classifi
         db, parceiro_id=promocao.parceiro_id, programa_id=promocao.programa_id,
         excluir_promocao_id=promocao.id,
     )
-    media_mercado = await _media_mercado(db, promocao.programa_id)
+    mercado = await _mercado(db, promocao.programa_id)
 
     stmt_categorias = select(CategoriaPromocao).filter_by(promocao_id=promocao.id)
     resultado_categorias = await db.execute(stmt_categorias)
@@ -132,7 +136,7 @@ async def classificar_promocao(db: AsyncSession, promocao: Promocao) -> Classifi
 
     criterios = {
         "historico": pilares.pilar_historico_com_base(promocao, base),
-        "atratividade": pilares.pilar_atratividade(promocao, media_mercado),
+        "atratividade": pilares.pilar_atratividade(promocao, mercado),
         "amplitude": pilares.pilar_amplitude(promocao, qtd_categorias),
         "facilidade": pilares.pilar_facilidade(promocao),
         "exclusividade": pilares.pilar_exclusividade(promocao, historico),

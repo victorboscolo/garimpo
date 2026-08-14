@@ -113,10 +113,13 @@ class BaseComparacao:
     nivel: str  # FAMILIA | SEGMENTO | MERCADO | NENHUMA
     rotulo: str | None  # o segmento usado, quando for o caso
     confianca_historica: str
+    # A distribuição inteira, e não só a média: a nota é a posição da oferta
+    # dentro dela. Ver motor/percentil.py.
+    distribuicao: list = field(default_factory=list)
 
 
-async def _media_do_segmento(db: AsyncSession, categoria_origem_id, programa_id):
-    """Média e volume das ofertas aprovadas de um segmento."""
+async def _valores_do_segmento(db: AsyncSession, categoria_origem_id, programa_id):
+    """Pontuações aprovadas de um segmento."""
     stmt = (
         select(Promocao.pontuacao)
         .join(ParceiroCategoria, ParceiroCategoria.parceiro_id == Promocao.parceiro_id)
@@ -126,10 +129,7 @@ async def _media_do_segmento(db: AsyncSession, categoria_origem_id, programa_id)
             Promocao.status.in_(["APROVADA", "PUBLICADA"]),
         )
     )
-    valores = (await db.execute(stmt)).scalars().all()
-    if not valores:
-        return None, 0
-    return Decimal(str(sum(valores) / len(valores))), len(valores)
+    return list((await db.execute(stmt)).scalars().all())
 
 
 # Uma única oferta anterior não é histórico: é uma coincidência. Comparar com
@@ -175,6 +175,7 @@ async def obter_base_comparacao(
             nivel="FAMILIA",
             rotulo=None,
             confianca_historica=familia.confianca_historica,
+            distribuicao=[pontuacao for pontuacao, _ in familia.amostras],
         )
 
     # Categorias do parceiro, com o volume aprovado de cada uma.
@@ -185,7 +186,7 @@ async def obter_base_comparacao(
     candidatos = []
     por_id = {}
     for categoria_origem_id in vinculos:
-        _, total = await _media_do_segmento(db, categoria_origem_id, programa_id)
+        total = len(await _valores_do_segmento(db, categoria_origem_id, programa_id))
         origem = await db.get(CategoriaOrigem, categoria_origem_id)
         if origem is None:
             continue
@@ -201,10 +202,11 @@ async def obter_base_comparacao(
 
     escolhido = escolher_segmento(candidatos, minimo=minimo_segmento)
     if escolhido is not None:
-        media, total = await _media_do_segmento(db, por_id[escolhido], programa_id)
+        valores = await _valores_do_segmento(db, por_id[escolhido], programa_id)
+        media = Decimal(str(sum(valores) / len(valores))) if valores else None
         return BaseComparacao(
-            media_ponderada=media, total=total, nivel="SEGMENTO",
-            rotulo=escolhido, confianca_historica="MEDIA",
+            media_ponderada=media, total=len(valores), nivel="SEGMENTO",
+            rotulo=escolhido, confianca_historica="MEDIA", distribuicao=valores,
         )
 
     stmt_mercado = select(Promocao.pontuacao).filter(
@@ -217,4 +219,5 @@ async def obter_base_comparacao(
     return BaseComparacao(
         media_ponderada=Decimal(str(sum(valores) / len(valores))),
         total=len(valores), nivel="MERCADO", rotulo=None, confianca_historica="BAIXA",
+        distribuicao=list(valores),
     )
