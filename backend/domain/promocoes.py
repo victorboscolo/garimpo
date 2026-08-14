@@ -54,6 +54,11 @@ class Promocao(Base):
     # da nota — esta diz se a oferta é boa, o selo diz que ela vai expirar.
     em_promocao: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # O valor exibido não vale para a compra inteira: ou o card diz "Até X", ou
+    # o regulamento cita uma pontuação menor, revelando que o valor mostrado é
+    # o degrau de cima de uma escada. Ver application/condicoes.py.
+    valor_condicionado: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
     requer_clube: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     qual_clube: Mapped[str | None] = mapped_column(String(100))
     requer_cupom: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

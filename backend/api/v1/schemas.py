@@ -35,6 +35,7 @@ class PromocaoOut(BaseModel):
     pontuacao_clube: Decimal | None = None
     pontuacao_anterior: Decimal | None = None
     em_promocao: bool = False
+    valor_condicionado: bool = False
     disponibilidade: str
     status: str
     motivo_rejeicao: str | None = None

@@ -598,15 +598,15 @@ function renderPontuacao(p) {
     ? ` <span class="pontuacao-anterior">eram ${esc(p.pontuacao_anterior)}</span>`
     : "";
 
-  const aviso = p.pontuacao_e_teto ? `
+  const aviso = p.valor_condicionado ? `
     <div class="aviso-condicionada">
-      Valor máximo anunciado — costuma valer só para marcas ou produtos
-      específicos. Confira as regras do parceiro antes de publicar.
+      Este valor não vale para a compra inteira — costuma se aplicar só a
+      certas categorias, marcas ou produtos. Veja o regulamento abaixo.
     </div>` : "";
 
   return `
     <div class="pontuacao">
-      ${p.pontuacao_e_teto ? '<span class="tag-condicionada">⚠ condicionada</span> ' : ""}
+      ${p.valor_condicionado ? '<span class="tag-condicionada" title="O valor exibido não vale para a compra inteira: ou o card anuncia &quot;Até&quot;, ou o regulamento cita uma pontuação menor para o restante da loja.">⚠ condicionada</span> ' : ""}
       <b>${esc(p.pontuacao)}</b> ${esc(formatUnidade(p.unidade_pontuacao))}${clube}${anterior}
     </div>
     ${aviso}`;

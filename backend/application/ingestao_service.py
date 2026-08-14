@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import set_committed_value
 
+from application.condicoes import valor_e_condicionado
 from application.motor.servico import classificar_promocao
 from domain.cadastros import Marca, Parceiro, Programa
 from domain.promocoes import Promocao
@@ -107,6 +108,16 @@ def _completar_dados_da_campanha(existente: Promocao, bruta: PromocaoBrutaIn) ->
         mudou = True
     if bruta.em_promocao and not existente.em_promocao:
         existente.em_promocao = True
+        mudou = True
+
+    # Recalculado sempre que o regulamento chega ou muda: é leitura dos dados
+    # da oferta, não fato novo, então acompanhar a melhor informação disponível
+    # é o comportamento correto.
+    condicionado = valor_e_condicionado(
+        existente.pontuacao, existente.regulamento_texto, existente.pontuacao_e_teto
+    )
+    if existente.valor_condicionado != condicionado:
+        existente.valor_condicionado = condicionado
         mudou = True
 
     return mudou
@@ -215,6 +226,9 @@ async def ingerir_promocao_bruta(
         pontuacao_clube=bruta.pontuacao_clube,
         pontuacao_anterior=bruta.pontuacao_anterior,
         em_promocao=bruta.em_promocao,
+        valor_condicionado=valor_e_condicionado(
+            bruta.pontuacao, bruta.regulamento_texto, bruta.pontuacao_e_teto
+        ),
         data_inicio=bruta.data_inicio,
         data_fim=bruta.data_fim,
         requer_clube=bruta.requer_clube,
