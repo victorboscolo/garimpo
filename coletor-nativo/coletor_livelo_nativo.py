@@ -26,6 +26,8 @@ from decimal import Decimal
 import httpx
 from playwright.async_api import async_playwright
 
+from parceiros_json import extrair_parceiros, parceiro_para_bruta
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -98,6 +100,11 @@ class PromocaoBruta:
     # Periodo da campanha, extraido do regulamento na pagina de detalhe.
     data_inicio: date | None = None
     data_fim: date | None = None
+    # Pontuacao fora de campanha (`parityBau`). O piso real: a Liga Vitoria
+    # anuncia "ate 100" e volta a 1 quando a promocao acabar.
+    pontuacao_base: Decimal | None = None
+    # Categorias do parceiro segundo a propria Livelo, sem traducao.
+    categorias: list = None
     # Interno: nao vai para a API. Marca os cards com selo "Promocao", que sao
     # os que tem campanha ativa e, portanto, regulamento a buscar.
     buscar_detalhe: bool = False
@@ -311,6 +318,46 @@ async def enriquecer_com_detalhe(page, item: PromocaoBruta, tentativas: int = 2)
     _aplicar_regulamento(item, regulamento)
 
 
+def _do_json(dados, href_por_codigo: dict) -> PromocaoBruta | None:
+    """Monta uma PromocaoBruta a partir do objeto estruturado da pagina.
+
+    `parceiro_nome_bruto` continua vindo do slug da URL, e nao do `name` do
+    JSON: ele participa do hash de deduplicacao, e trocar sua origem faria a
+    coleta seguinte nao reconhecer nenhuma oferta existente.
+    """
+    if dados.pontuacao is None or not dados.codigo_externo:
+        return None
+
+    href = href_por_codigo.get(dados.codigo_externo) or dados.url_origem or ""
+    nome = _extrair_nome_da_url(href) if "/parceiros/" in href else (dados.nome_exibicao or "")
+    if not nome:
+        return None
+
+    prefixo = "Até " if dados.pontuacao_e_teto else ""
+    return PromocaoBruta(
+        programa_nome="Livelo",
+        parceiro_nome_bruto=nome,
+        titulo=f"{nome} - {prefixo}{dados.pontuacao} pontos",
+        url_origem=dados.url_origem or href,
+        pontuacao=dados.pontuacao,
+        unidade_pontuacao=dados.unidade_pontuacao,
+        regulamento_texto=dados.regulamento_texto,
+        pontuacao_e_teto=dados.pontuacao_e_teto,
+        pontuacao_clube=dados.pontuacao_clube,
+        pontuacao_base=dados.pontuacao_base,
+        codigo_externo=dados.codigo_externo,
+        nome_exibicao=dados.nome_exibicao,
+        em_promocao=dados.em_promocao,
+        data_inicio=dados.data_inicio,
+        data_fim=dados.data_fim,
+        categorias=dados.categorias,
+        # O cupom continua saindo do texto do regulamento: o JSON nao tem campo
+        # proprio para ele.
+        requer_cupom=bool(_extrair_cupom(dados.regulamento_texto or "")),
+        cupom=_extrair_cupom(dados.regulamento_texto or ""),
+    )
+
+
 async def coletar() -> list[PromocaoBruta]:
     promocoes: list[PromocaoBruta] = []
     vistos: set[str] = set()  # evita duplicar quando ha 2 links pro mesmo parceiro na pagina
@@ -335,6 +382,45 @@ async def coletar() -> list[PromocaoBruta]:
             return promocoes
 
         await page.wait_for_timeout(3000)  # tempo para o conteúdo dinâmico terminar de renderizar
+
+        # Caminho principal: a página embute um objeto por parceiro com tudo
+        # tipado — pontuação, base, clube, teto, datas, regulamento e
+        # categorias. Dispensa o regex sobre texto e a visita a ~50 páginas de
+        # regras. Ver parceiros_json.py.
+        html_pagina = await page.content()
+        estruturados = extrair_parceiros(html_pagina)
+        logger.info("JSON estruturado: %d parceiros encontrados na página.", len(estruturados))
+
+        href_por_codigo = {}
+        links = await page.locator("a[href*='/juntar-pontos/parceiros/']").all()
+        for link in links:
+            try:
+                href = await link.get_attribute("href")
+            except Exception:
+                continue
+            codigo = _extrair_codigo_da_url(href or "")
+            if codigo and codigo not in href_por_codigo:
+                href_por_codigo[codigo] = href
+
+        if estruturados:
+            for codigo, objeto in estruturados.items():
+                item = _do_json(parceiro_para_bruta(objeto), href_por_codigo)
+                if item is None:
+                    continue
+                chave = f"{item.parceiro_nome_bruto}|{item.codigo_externo}|{item.pontuacao}|{item.unidade_pontuacao}"
+                if chave in vistos:
+                    continue
+                vistos.add(chave)
+                promocoes.append(item)
+
+            await browser.close()
+            logger.info("Coleta finalizada pelo JSON: %d promoções.", len(promocoes))
+            return promocoes
+
+        logger.warning(
+            "JSON estruturado não encontrado — a Livelo pode ter mudado a página. "
+            "Caindo no parsing de texto renderizado."
+        )
 
         links = await page.locator("a[href*='/juntar-pontos/parceiros/']").all()
         logger.info("Encontrados %d links de parceiros.", len(links))
@@ -401,6 +487,8 @@ async def enviar_para_api(promocoes: list[PromocaoBruta]) -> None:
                 "pontuacao_clube": str(p.pontuacao_clube) if p.pontuacao_clube is not None else None,
                 "codigo_externo": p.codigo_externo,
                 "nome_exibicao": p.nome_exibicao,
+                "pontuacao_base": str(p.pontuacao_base) if p.pontuacao_base is not None else None,
+                "categorias": p.categorias or [],
                 "pontuacao_anterior": str(p.pontuacao_anterior) if p.pontuacao_anterior is not None else None,
                 "em_promocao": p.em_promocao,
                 "data_inicio": p.data_inicio.isoformat() if p.data_inicio else None,

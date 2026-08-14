@@ -34,6 +34,7 @@ class PromocaoOut(BaseModel):
     pontuacao_e_teto: bool = False
     pontuacao_clube: Decimal | None = None
     pontuacao_anterior: Decimal | None = None
+    pontuacao_base: Decimal | None = None
     em_promocao: bool = False
     valor_condicionado: bool = False
     disponibilidade: str
@@ -121,6 +122,8 @@ class PromocaoIngerirIn(BaseModel):
     pontuacao_clube: Decimal | None = None
     codigo_externo: str | None = None
     nome_exibicao: str | None = None
+    pontuacao_base: Decimal | None = None
+    categorias: list[str] = []
     pontuacao_anterior: Decimal | None = None
     em_promocao: bool = False
     data_inicio: datetime | None = None

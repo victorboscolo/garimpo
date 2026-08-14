@@ -107,3 +107,24 @@ def test_sem_regulamento_nao_se_conclui_nada():
     """
     assert resolver_marketplace(None) is None
     assert resolver_marketplace("Coletado do site oficial da Livelo.") is None
+
+
+def test_regulamento_sem_campanha_tambem_vale():
+    """O JSON da Livelo traz condições gerais mesmo para parceiros sem campanha
+    ativa — texto que nunca chegava pelo caminho antigo. A regra de "só vale se
+    disser 'campanha válida'" existia para descartar a frase que o próprio
+    coletor escrevia, e essa frase não existe mais.
+    """
+    reg = ("Para acumular Pontos Livelo, é necessário a inclusão do cupom LIVELO no "
+           "carrinho de compras; produtos vendidos e entregues por Época Cosméticos.")
+    assert resolver_marketplace(reg) == "PROIBIDO"
+
+
+def test_frase_sintetica_do_coletor_antigo_nao_e_regulamento():
+    """Registros antigos ainda têm essa frase gravada; ela não diz nada sobre a
+    oferta e não pode ser lida como regulamento.
+    """
+    assert resolver_marketplace("Coletado do site oficial da Livelo.") is None
+    assert resolver_marketplace(
+        "Coletado do site oficial da Livelo. Base de comparacao anterior (Eram): 2 pontos."
+    ) is None

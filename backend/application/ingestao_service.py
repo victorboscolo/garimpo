@@ -12,13 +12,13 @@ from datetime import datetime
 from dataclasses import dataclass
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import set_committed_value
 
 from application.condicoes import resolver_marketplace, valor_e_condicionado
 from application.motor.servico import classificar_promocao
-from domain.cadastros import Marca, Parceiro, Programa
+from domain.cadastros import CategoriaOrigem, Marca, Parceiro, ParceiroCategoria, Programa
 from domain.promocoes import Promocao
 
 logger = logging.getLogger("garimpo.application.ingestao")
@@ -41,6 +41,8 @@ class PromocaoBrutaIn:
     pontuacao_clube: Decimal | None = None
     codigo_externo: str | None = None
     nome_exibicao: str | None = None
+    pontuacao_base: Decimal | None = None
+    categorias: list[str] | None = None
     pontuacao_anterior: Decimal | None = None
     em_promocao: bool = False
     data_inicio: datetime | None = None
@@ -103,6 +105,9 @@ def _completar_dados_da_campanha(existente: Promocao, bruta: PromocaoBrutaIn) ->
     if bruta.data_fim and existente.data_fim is None:
         existente.data_fim = bruta.data_fim
         mudou = True
+    if bruta.pontuacao_base is not None and existente.pontuacao_base is None:
+        existente.pontuacao_base = bruta.pontuacao_base
+        mudou = True
     if bruta.pontuacao_anterior is not None and existente.pontuacao_anterior is None:
         existente.pontuacao_anterior = bruta.pontuacao_anterior
         mudou = True
@@ -126,6 +131,53 @@ def _completar_dados_da_campanha(existente: Promocao, bruta: PromocaoBrutaIn) ->
         mudou = True
 
     return mudou
+
+
+async def _sincronizar_categorias(
+    db: AsyncSession, parceiro_id, programa_id, slugs: list[str] | None
+) -> None:
+    """Liga o parceiro às categorias que o programa de origem declara.
+
+    Os slugs são gravados como a fonte os informa, em `categorias_origem`. O
+    agrupamento canônico (`categorias_origem.categoria_id`) nasce nulo e só é
+    preenchido por curadoria — assim o que veio da Livelo permanece sempre
+    distinguível do que nós decidimos, e agrupar depois não exige recoletar.
+
+    Vínculos que a fonte deixou de listar são removidos: a categoria do parceiro
+    é um retrato do que o programa afirma hoje, não um acúmulo histórico.
+    """
+    if not slugs:
+        return
+
+    existentes = (await db.execute(
+        select(CategoriaOrigem).filter_by(programa_id=programa_id).filter(CategoriaOrigem.slug.in_(slugs))
+    )).scalars().all()
+    por_slug = {c.slug: c for c in existentes}
+
+    for slug in slugs:
+        if slug not in por_slug:
+            nova = CategoriaOrigem(programa_id=programa_id, slug=slug)
+            db.add(nova)
+            await db.flush()
+            por_slug[slug] = nova
+
+    desejadas = {por_slug[slug].id for slug in slugs}
+    atuais = {
+        v.categoria_origem_id
+        for v in (await db.execute(
+            select(ParceiroCategoria).filter_by(parceiro_id=parceiro_id)
+        )).scalars().all()
+    }
+
+    for categoria_origem_id in desejadas - atuais:
+        db.add(ParceiroCategoria(parceiro_id=parceiro_id, categoria_origem_id=categoria_origem_id))
+    for obsoleta in atuais - desejadas:
+        await db.execute(
+            delete(ParceiroCategoria).where(
+                ParceiroCategoria.parceiro_id == parceiro_id,
+                ParceiroCategoria.categoria_origem_id == obsoleta,
+            )
+        )
 
 
 def _tem_regulamento_real(texto: str | None) -> bool:
@@ -169,6 +221,11 @@ async def ingerir_promocao_bruta(
             if parceiro_existente is not None and parceiro_existente.nome_exibicao != bruta.nome_exibicao:
                 parceiro_existente.nome_exibicao = bruta.nome_exibicao
                 mudou = True
+        if bruta.categorias:
+            await _sincronizar_categorias(
+                db, existente.parceiro_id, existente.programa_id, bruta.categorias
+            )
+            mudou = True
         if mudou:
             await db.commit()
             logger.info("Promoção já existente (hash=%s), dados complementados.", hash_calculado)
@@ -219,6 +276,8 @@ async def ingerir_promocao_bruta(
         # manual futura não pode ser sobrescrita pela coleta.
         parceiro.nome_exibicao = bruta.nome_exibicao
 
+    await _sincronizar_categorias(db, parceiro.id, programa.id, bruta.categorias)
+
     nova_promocao = Promocao(
         programa_id=programa.id,
         parceiro_id=parceiro.id,
@@ -229,6 +288,7 @@ async def ingerir_promocao_bruta(
         unidade_pontuacao=bruta.unidade_pontuacao,
         pontuacao_e_teto=bruta.pontuacao_e_teto,
         pontuacao_clube=bruta.pontuacao_clube,
+        pontuacao_base=bruta.pontuacao_base,
         pontuacao_anterior=bruta.pontuacao_anterior,
         em_promocao=bruta.em_promocao,
         valor_condicionado=valor_e_condicionado(

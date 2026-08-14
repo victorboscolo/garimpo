@@ -20,9 +20,10 @@ from decimal import Decimal, InvalidOperation
 # o que evita ler datas ("14 a 16/08/2026") ou percentuais como pontuação.
 PADRAO_PONTOS_NO_TEXTO = re.compile(r"(\d+)\s*pontos?\b", re.IGNORECASE)
 
-# Só é regulamento de campanha o texto que a página de regras devolve; a frase
-# que o coletor antigo escrevia sobre si mesmo não diz nada sobre a oferta.
-PADRAO_TEM_CAMPANHA = re.compile(r"campanha v[áa]lida", re.IGNORECASE)
+# A frase que o coletor antigo escrevia sobre si mesmo em `regulamento_texto`.
+# Não diz nada sobre a oferta e não pode ser lida como regulamento — registros
+# gravados antes de 14/08/2026 ainda a contêm.
+PADRAO_FRASE_DO_COLETOR = re.compile(r"^Coletado do site oficial", re.IGNORECASE)
 
 # "produtos vendidos e entregues por X" — a oferta se limita ao estoque próprio
 # da loja, deixando de fora os vendedores terceiros.
@@ -84,11 +85,11 @@ def resolver_marketplace(regulamento_texto: str | None) -> str | None:
       Quero-Quero").
     - PERMITIDO: há regulamento e ele não restringe. Silêncio num texto que
       existe é evidência de que vale para a compra inteira.
-    - None: não há regulamento. A oferta não tem campanha ativa e sua página de
-      regras nunca foi visitada — isso não é ausência de restrição, é ausência
-      de leitura, e afirmar "permitido" aqui seria inventar.
+    - None: não há regulamento algum. Sem texto não se lê nada, e isso é
+      ausência de leitura, não ausência de restrição — afirmar "permitido"
+      aqui seria inventar.
     """
-    if not regulamento_texto or not PADRAO_TEM_CAMPANHA.search(regulamento_texto):
+    if not regulamento_texto or PADRAO_FRASE_DO_COLETOR.match(regulamento_texto.strip()):
         return None
 
     # A ordem importa: um texto pode citar as duas coisas, e nesse caso o que

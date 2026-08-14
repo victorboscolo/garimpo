@@ -48,6 +48,10 @@ class Promocao(Base):
     # existe porque a oferta maior é condicionada a assinatura.
     pontuacao_clube: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
 
+    # `parityBau` da Livelo: quanto a oferta vale fora da campanha. É o piso
+    # real — a Liga Vitória anuncia "até 100" e volta a 1 quando acabar.
+    pontuacao_base: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+
     # "Eram 1 ponto" no card: valor anterior da oferta. Mede o tamanho do salto.
     pontuacao_anterior: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     # Selo "Promoção" no card: campanha ativa, logo temporária. Eixo diferente
