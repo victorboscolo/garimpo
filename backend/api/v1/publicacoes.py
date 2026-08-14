@@ -32,6 +32,21 @@ async def ver_fila(tipo: str | None = None, db: AsyncSession = Depends(get_db)):
     }
 
 
+@router.get("/diagnostico")
+async def diagnostico(db: AsyncSession = Depends(get_db)):
+    """Confere a configuração do Telegram sem publicar nada.
+
+    Um erro de configuração se manifesta de forma pouco óbvia — token errado,
+    bot fora do canal, bot sem permissão e ID errado falham de jeitos
+    diferentes e igualmente crípticos.
+    """
+    from infrastructure.telegram import cliente
+
+    config = await publicacao_service.carregar_config(db)
+    canais = list((config.get("canais") or {}).keys())
+    return {"canais": [await cliente.diagnosticar(tipo) for tipo in canais]}
+
+
 @router.post("/despachar")
 async def despachar(
     tipo: str | None = None, limite: int | None = None, db: AsyncSession = Depends(get_db)

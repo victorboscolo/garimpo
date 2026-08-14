@@ -70,3 +70,79 @@ async def enviar(tipo: str, texto: str) -> None:
         # A resposta do Telegram descreve o erro, mas a URL contém o token —
         # por isso só o corpo é propagado.
         raise RuntimeError(f"Telegram devolveu HTTP {resposta.status_code}: {resposta.text[:200]}")
+
+
+async def diagnosticar(tipo: str) -> dict:
+    """Verifica a configuração sem publicar nada.
+
+    Existe porque um erro de configuração no Telegram se manifesta de formas
+    pouco óbvias — token errado, bot não adicionado, bot sem permissão de
+    publicar e ID de canal errado dão mensagens diferentes e igualmente
+    crípticas. Melhor descobrir aqui do que com uma mensagem torta chegando
+    aos validadores.
+
+    Nenhum valor de token aparece no retorno.
+    """
+    token, canal = _token(), canal_de(tipo)
+
+    resultado = {
+        "canal": tipo,
+        "token_configurado": bool(token),
+        "canal_configurado": bool(canal),
+        "bot": None,
+        "canal_nome": None,
+        "pode_publicar": None,
+        "erro": None,
+    }
+    if not token or not canal:
+        resultado["erro"] = motivo_nao_configurado(tipo)
+        return resultado
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        try:
+            # 1. O token é válido? getMe é a forma mais barata de saber.
+            resposta = await client.get(f"{API_BASE}/bot{token}/getMe")
+            dados = resposta.json()
+            if not dados.get("ok"):
+                resultado["erro"] = (
+                    "O Telegram recusou o token. Confira se copiou a linha inteira "
+                    f"do BotFather. ({dados.get('description', 'sem detalhe')})"
+                )
+                return resultado
+            bot = dados["result"]
+            resultado["bot"] = f"@{bot.get('username')}"
+
+            # 2. O bot enxerga o canal? Falha aqui costuma ser ID errado ou bot
+            #    não adicionado.
+            resposta = await client.get(f"{API_BASE}/bot{token}/getChat", params={"chat_id": canal})
+            dados = resposta.json()
+            if not dados.get("ok"):
+                resultado["erro"] = (
+                    "O bot não encontrou o canal. Verifique se o ID está correto "
+                    "(inclusive o sinal de menos) e se o bot foi adicionado como "
+                    f"administrador. ({dados.get('description', 'sem detalhe')})"
+                )
+                return resultado
+            resultado["canal_nome"] = dados["result"].get("title")
+
+            # 3. Tem permissão de publicar? Ser membro não basta.
+            resposta = await client.get(
+                f"{API_BASE}/bot{token}/getChatMember",
+                params={"chat_id": canal, "user_id": bot["id"]},
+            )
+            dados = resposta.json()
+            if dados.get("ok"):
+                membro = dados["result"]
+                administrador = membro.get("status") in ("administrator", "creator")
+                resultado["pode_publicar"] = bool(
+                    administrador and membro.get("can_post_messages", administrador)
+                )
+                if not resultado["pode_publicar"]:
+                    resultado["erro"] = (
+                        "O bot está no canal mas não pode publicar. Em Administradores, "
+                        "habilite a permissão de publicar mensagens."
+                    )
+        except httpx.RequestError as e:
+            resultado["erro"] = f"Não foi possível falar com o Telegram: {e}"
+
+    return resultado

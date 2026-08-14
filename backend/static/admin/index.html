@@ -658,6 +658,7 @@ async function carregarFila() {
   const barra = document.createElement("div");
   barra.className = "status-line";
   barra.innerHTML = `
+    <button onclick="testarConfiguracao()">🔌 Testar configuração</button>
     <button onclick="despachar(2)">▶ Enviar as 2 primeiras</button>
     <button onclick="despachar(null)">▶ Enviar tudo (${dados.total})</button>
   `;
@@ -678,6 +679,16 @@ async function carregarFila() {
     `;
     lista.appendChild(card);
   }
+}
+
+async function testarConfiguracao() {
+  const r = await (await fetch("/api/v1/publicacoes/diagnostico")).json();
+  const linhas = r.canais.map(c => {
+    if (c.erro) return `❌ ${c.canal}\n   ${c.erro}`;
+    const permissao = c.pode_publicar ? "pode publicar" : "SEM permissão de publicar";
+    return `✅ ${c.canal}\n   bot ${c.bot} · canal "${c.canal_nome}" · ${permissao}`;
+  });
+  alert("Configuração do Telegram\n\n" + linhas.join("\n\n"));
 }
 
 async function despachar(limite) {
