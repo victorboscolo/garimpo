@@ -12,6 +12,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.configuracoes_service import resolver_configuracao
+from application.motor.segmento import escolher_segmento
+from domain.cadastros import Categoria, CategoriaOrigem, ParceiroCategoria
 from domain.promocoes import Promocao
 
 
@@ -96,4 +98,111 @@ async def obter_historico_familia(
         total_campanhas_janela=total,
         confianca_historica=confianca,
         amostras=amostras,
+    )
+
+
+@dataclass
+class BaseComparacao:
+    """Contra o que a oferta foi comparada, e com que confiança.
+
+    O nível deixa explícito na classificação qual base sustentou a nota, em vez
+    de escondê-lo atrás de um número.
+    """
+    media_ponderada: Decimal | None
+    total: int
+    nivel: str  # FAMILIA | SEGMENTO | MERCADO | NENHUMA
+    rotulo: str | None  # o segmento usado, quando for o caso
+    confianca_historica: str
+
+
+async def _media_do_segmento(db: AsyncSession, categoria_origem_id, programa_id):
+    """Média e volume das ofertas aprovadas de um segmento."""
+    stmt = (
+        select(Promocao.pontuacao)
+        .join(ParceiroCategoria, ParceiroCategoria.parceiro_id == Promocao.parceiro_id)
+        .filter(
+            ParceiroCategoria.categoria_origem_id == categoria_origem_id,
+            Promocao.programa_id == programa_id,
+            Promocao.status.in_(["APROVADA", "PUBLICADA"]),
+        )
+    )
+    valores = (await db.execute(stmt)).scalars().all()
+    if not valores:
+        return None, 0
+    return Decimal(str(sum(valores) / len(valores))), len(valores)
+
+
+async def obter_base_comparacao(
+    db: AsyncSession,
+    parceiro_id: uuid.UUID,
+    programa_id: uuid.UUID,
+    excluir_promocao_id: uuid.UUID | None = None,
+    minimo_segmento: int = 5,
+) -> BaseComparacao:
+    """Resolve contra o que comparar a oferta, em cascata.
+
+    1. Histórico próprio do parceiro. É o mais informativo, porque compara a
+       oferta com o que aquele mesmo parceiro já fez.
+    2. Segmento, quando não há histórico próprio — o caso de 223 dos 249
+       parceiros. Usa a categoria mais específica com amostra suficiente
+       (ver motor/segmento.py).
+    3. Mercado (o programa inteiro), como última opção.
+
+    A comparação por segmento é mais grosseira que a por histórico próprio:
+    "servicos" reúne 29 parceiros que fazem coisas bem diferentes. Por isso ela
+    fica no nível 2 e a confiança cai para MEDIA quando é usada.
+    """
+    familia = await obter_historico_familia(
+        db, parceiro_id=parceiro_id, programa_id=programa_id,
+        excluir_promocao_id=excluir_promocao_id,
+    )
+    if familia.media_ponderada is not None:
+        return BaseComparacao(
+            media_ponderada=familia.media_ponderada,
+            total=familia.total_campanhas_janela,
+            nivel="FAMILIA",
+            rotulo=None,
+            confianca_historica=familia.confianca_historica,
+        )
+
+    # Categorias do parceiro, com o volume aprovado de cada uma.
+    vinculos = (await db.execute(
+        select(ParceiroCategoria.categoria_origem_id).filter_by(parceiro_id=parceiro_id)
+    )).scalars().all()
+
+    candidatos = []
+    por_id = {}
+    for categoria_origem_id in vinculos:
+        _, total = await _media_do_segmento(db, categoria_origem_id, programa_id)
+        origem = await db.get(CategoriaOrigem, categoria_origem_id)
+        if origem is None:
+            continue
+        # O agrupamento canônico, quando existir, é o rótulo preferido: é a
+        # decisão de curadoria sobrepondo-se ao vocabulário bruto da fonte.
+        rotulo = origem.slug
+        if origem.categoria_id is not None:
+            canonica = await db.get(Categoria, origem.categoria_id)
+            if canonica is not None:
+                rotulo = canonica.nome
+        candidatos.append((rotulo, total))
+        por_id[rotulo] = categoria_origem_id
+
+    escolhido = escolher_segmento(candidatos, minimo=minimo_segmento)
+    if escolhido is not None:
+        media, total = await _media_do_segmento(db, por_id[escolhido], programa_id)
+        return BaseComparacao(
+            media_ponderada=media, total=total, nivel="SEGMENTO",
+            rotulo=escolhido, confianca_historica="MEDIA",
+        )
+
+    stmt_mercado = select(Promocao.pontuacao).filter(
+        Promocao.programa_id == programa_id,
+        Promocao.status.in_(["APROVADA", "PUBLICADA"]),
+    )
+    valores = (await db.execute(stmt_mercado)).scalars().all()
+    if not valores:
+        return BaseComparacao(None, 0, "NENHUMA", None, "BAIXA")
+    return BaseComparacao(
+        media_ponderada=Decimal(str(sum(valores) / len(valores))),
+        total=len(valores), nivel="MERCADO", rotulo=None, confianca_historica="BAIXA",
     )

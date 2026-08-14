@@ -31,6 +31,19 @@ def pilar_historico(promocao: Promocao, historico: HistoricoFamilia) -> float:
     return _clamp(nota)
 
 
+def pilar_historico_com_base(promocao: Promocao, base) -> float:
+    """Compara a pontuação com a base resolvida em cascata.
+
+    Mesma curva do pilar_historico original — 1x a média vale 50, 2x vale 100 —
+    mas a média pode vir do histórico próprio, do segmento ou do mercado. Qual
+    delas foi usada fica registrado em `base.nivel` e reflete na
+    confianca_historica, para que a nota nunca esconda em que se apoiou.
+    """
+    if base.media_ponderada is None or base.media_ponderada == 0:
+        return 50.0
+    return _clamp(float(promocao.pontuacao) / float(base.media_ponderada) * 50.0)
+
+
 def pilar_atratividade(promocao: Promocao, media_mercado: Decimal | None) -> float:
     """Compara a pontuação com a média de mercado (todo o domínio/programa),
     independente do histórico específico deste parceiro — mede quão boa é

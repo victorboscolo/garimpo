@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.configuracoes_service import resolver_configuracao
 from application.motor import pilares
-from application.motor.historico import obter_historico_familia
+from application.motor.historico import obter_base_comparacao, obter_historico_familia
 from domain.motor import ENTIDADE_PROMOCAO, Classificacao
 from domain.promocoes import CategoriaPromocao, Promocao
 
@@ -62,7 +62,7 @@ def _resolver_categoria(nota: float, faixas: dict) -> str:
     return "POUCO_ATRATIVA"  # nota abaixo de todos os pisos
 
 
-def _montar_justificativa(criterios: dict, categoria: str, confianca_historica: str) -> str:
+def _montar_justificativa(criterios: dict, categoria: str, confianca_historica: str, base=None) -> str:
     """Camada de Interpretação: texto simplificado que PODE cruzar critérios
     narrativamente, mesmo que a nota em si seja calculada por critérios
     independentes (decisão da auditoria original).
@@ -80,7 +80,21 @@ def _montar_justificativa(criterios: dict, categoria: str, confianca_historica: 
     if criterios["facilidade"] < 60:
         partes.append("Possui restrições relevantes (clube, cupom ou disponibilidade limitada).")
 
-    if confianca_historica == "BAIXA":
+    # Dizer contra o que a oferta foi comparada é o que torna a nota audível:
+    # sem isso, "Boa" é um número sem procedência.
+    if base is not None:
+        if base.nivel == "FAMILIA":
+            partes.append(f"Comparada com o histórico do próprio parceiro ({base.total} oferta(s) aprovada(s)).")
+        elif base.nivel == "SEGMENTO":
+            partes.append(
+                f"Sem histórico próprio: comparada com o segmento '{base.rotulo}' "
+                f"({base.total} ofertas aprovadas)."
+            )
+        elif base.nivel == "MERCADO":
+            partes.append("Sem histórico próprio nem segmento com amostra suficiente: comparada com o mercado.")
+        else:
+            partes.append("Sem base de comparação disponível ainda.")
+    elif confianca_historica == "BAIXA":
         partes.append("Histórico desta parceria ainda é limitado — avaliação com menor precisão comparativa.")
 
     return " ".join(partes)
@@ -103,6 +117,13 @@ async def classificar_promocao(db: AsyncSession, promocao: Promocao) -> Classifi
         db, parceiro_id=promocao.parceiro_id, programa_id=promocao.programa_id,
         excluir_promocao_id=promocao.id,
     )
+    # Base do pilar Histórico, em cascata: histórico próprio -> segmento ->
+    # mercado. Sem isso o pilar devolvia neutro para 223 dos 249 parceiros, que
+    # não têm oferta aprovada anterior com que se comparar.
+    base = await obter_base_comparacao(
+        db, parceiro_id=promocao.parceiro_id, programa_id=promocao.programa_id,
+        excluir_promocao_id=promocao.id,
+    )
     media_mercado = await _media_mercado(db, promocao.programa_id)
 
     stmt_categorias = select(CategoriaPromocao).filter_by(promocao_id=promocao.id)
@@ -110,7 +131,7 @@ async def classificar_promocao(db: AsyncSession, promocao: Promocao) -> Classifi
     qtd_categorias = len(resultado_categorias.scalars().all())
 
     criterios = {
-        "historico": pilares.pilar_historico(promocao, historico),
+        "historico": pilares.pilar_historico_com_base(promocao, base),
         "atratividade": pilares.pilar_atratividade(promocao, media_mercado),
         "amplitude": pilares.pilar_amplitude(promocao, qtd_categorias),
         "facilidade": pilares.pilar_facilidade(promocao),
@@ -123,7 +144,7 @@ async def classificar_promocao(db: AsyncSession, promocao: Promocao) -> Classifi
     nota = round(nota, 2)
 
     categoria = _resolver_categoria(nota, faixas)
-    justificativa = _montar_justificativa(criterios, categoria, historico.confianca_historica)
+    justificativa = _montar_justificativa(criterios, categoria, base.confianca_historica, base)
 
     # Desativa a classificação anterior, se existir
     stmt_ativa = select(Classificacao).filter_by(
@@ -141,7 +162,7 @@ async def classificar_promocao(db: AsyncSession, promocao: Promocao) -> Classifi
         nota=Decimal(str(nota)),
         categoria=categoria,
         criterios_avaliados=criterios,
-        confianca_historica=historico.confianca_historica,
+        confianca_historica=base.confianca_historica,
         confiabilidade_dados=Decimal(str(criterios["confiabilidade_dados"])),
         justificativa=justificativa,
         ativa=True,
