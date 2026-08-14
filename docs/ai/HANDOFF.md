@@ -1,225 +1,335 @@
 # Handoff para Claude Code
 
+> Revisado em 14/08/2026, ao fim de uma sessão que alterou substancialmente o
+> sistema. Os números aqui foram conferidos contra o banco no momento da
+> escrita, não reconstruídos de memória. A seção 12 lista as afirmações do
+> handoff anterior que se provaram falsas — vale ler antes de confiar em
+> qualquer documento mais antigo.
+
 ## 1. Resumo executivo
 
-O **Garimpo Promoções** é um sistema que coleta, normaliza e analisa ofertas de pontuação de programas de fidelidade (inicialmente Livelo e Esfera), calculando uma nota e categoria de atratividade para cada oferta via um motor de regras próprio (não é um LLM), e expondo os resultados para revisão humana antes de qualquer divulgação. Existe um segundo produto planejado, **Garimpo Emissões** (passagens aéreas via milhas), fora do escopo atual, mas cuja arquitetura já foi parcialmente antecipada.
+O **Garimpo Promoções** coleta, normaliza e analisa ofertas de pontuação de
+programas de fidelidade (hoje só Livelo), calcula uma nota e categoria de
+atratividade por um motor de regras determinístico (não é LLM) e expõe tudo
+para revisão humana antes de qualquer divulgação. Existe um segundo produto
+planejado, **Garimpo Emissões** (passagens aéreas via milhas), fora do escopo
+atual, mas cuja arquitetura já foi antecipada nas tabelas polimórficas
+(`classificacoes`, `arquivos` e `publicacoes` usam `entidade_tipo` +
+`entidade_id` sem FK nativa, para servirem aos dois domínios).
 
-**Estágio atual**: MVP funcional de ponta a ponta rodando localmente no Mac do usuário — coleta real (Livelo), motor de classificação, banco de dados, API e um painel administrativo simples estão implementados e foram validados com dados reais (249 promoções coletadas e classificadas). O projeto ainda **não usa controle de versão Git** (todo o código foi transferido via zip/Finder durante a sessão anterior) — isso deve ser corrigido na primeira sessão do Claude Code.
+**Estágio atual**: MVP funcional de ponta a ponta rodando localmente no Mac do
+usuário. Coleta real diária, motor calibrado com dados reais, banco, API e
+painel de revisão estão implementados e em uso. O repositório tem controle de
+versão (16 commits) e 51 testes automatizados.
 
-**Resultado esperado da próxima fase**: (a) inicializar Git no repositório; (b) completar as melhorias pendentes no painel admin (listadas na seção 9); (c) avaliar autenticação básica antes de qualquer exposição além de localhost.
+**O que mudou na sessão de 14/08**: o motor deixou de dar a mesma nota para
+todas as ofertas; o painel virou ferramenta de triagem real; e o coletor passou
+a aproveitar cinco dados que já baixava e descartava, além de buscar o
+regulamento das campanhas na página de detalhe do parceiro.
 
 ## 2. Escopo atual e limites
 
-**Dentro do escopo (MVP — Garimpo Promoções):**
-- Coleta de ofertas "ganhe pontos" da Livelo (parceiro + programa + pontuação).
-- Motor de Análise V1 (regras determinísticas, 6 critérios ponderados — não é IA/LLM).
-- Fila de revisão humana obrigatória (nenhuma publicação automática sem aprovação).
-- Painel administrativo mínimo para aprovar/rejeitar.
+**Dentro do escopo:**
+- Coleta de ofertas "ganhe pontos" da Livelo (listagem + página de regras das
+  campanhas ativas).
+- Motor de Análise V1 (6 critérios ponderados, determinístico).
+- Fila de revisão humana obrigatória — nenhuma publicação sem aprovação.
+- Painel administrativo de triagem.
 
 **Fora do escopo atual (adiado, não excluído):**
-- Garimpo Emissões (passagens aéreas) — ver `docs/GAR-1100/GAR-1100-Cap8-Notas-Futuro-Emissoes.md`.
-- Publicação automática (Telegram) — desenhada na documentação, **não implementada**.
-- Autenticação/autorização de usuários — endpoints hoje são públicos (uso local apenas).
-- Coletor da Esfera — programa está cadastrado no banco, mas não existe coletor implementado para ele.
+- Garimpo Emissões — o handoff anterior citava um `Cap8` de notas de
+  arquitetura que **não existe no repositório** (há apenas Cap. 3 a 7).
+- Publicação automática (Telegram) — desenhada, **não implementada**.
+- Autenticação — endpoints são públicos; ver seção 8.
+- Coletor da Esfera — programa cadastrado no banco, sem coletor.
 
 **Premissas que precisam ser preservadas:**
-- O sistema nunca contorna CAPTCHA, autenticação ou controles de acesso de terceiros (ver seção 6).
-- Promoções são **imutáveis**: uma mudança real de oferta cria um novo registro, nunca sobrescreve o anterior (preservação de histórico).
-- Toda publicação passa por aprovação humana — decisão de produto explícita, não é limitação técnica temporária.
+- O sistema nunca contorna CAPTCHA, autenticação ou controle de acesso (seção 6).
+- Promoções são **imutáveis no conteúdo**: mudança real de oferta cria registro
+  novo, nunca sobrescreve. Há **uma exceção estreita e deliberada**, documentada
+  na seção 5.
+- Toda publicação passa por aprovação humana — decisão de produto.
+- **Não se inventa dado.** Ver seção 5, é a regra de negócio mais reforçada pelo
+  usuário ao longo da sessão.
 
-## 3. Estado atual do projeto
+## 3. Estado atual
 
-| Componente | Status | O que já existe | O que falta | Arquivos/documentos relacionados |
-|---|---|---|---|---|
-| Modelo de dados (schema) | IMPLEMENTADO | 16 tabelas, migrations Alembic aplicadas, seed inicial | — | `docs/GAR-1100/GAR-1100-Cap3-Modelo-PostgreSQL-Fisico-Rev2.md`, `backend/migrations/versions/`, `backend/domain/*.py` |
-| Motor de Análise V1 | IMPLEMENTADO | 6 pilares, pesos/faixas configuráveis, testado com dados reais | Calibração real (depende de haver histórico aprovado) | `backend/application/motor/` |
-| Coletor Livelo (Docker, headless) | ABANDONADO | Implementação existe no código (`backend/coletores/livelo/`) | Bloqueado por proteção anti-robô (HTTP 403); não usar em produção | Ver seção 5 (decisão técnica) |
-| Coletor Livelo nativo (macOS) | IMPLEMENTADO | Roda fora do Docker, headless=False, validado com 249 promoções reais | Não captura variante "Clube Livelo"; sem tratamento de erro robusto para mudanças no site | `coletor-nativo/coletor_livelo_nativo.py` |
-| Agendamento automático | IMPLEMENTADO | `launchd` diário às 10:05 configurado e testado | Só roda com o Mac ligado e logado — sem monitoramento de falha | `coletor-nativo/com.garimpo.coletor-livelo.plist` |
-| API (FastAPI) | IMPLEMENTADO | Endpoints de listagem, aprovação, rejeição, ingestão, reclassificação (individual e em massa) | Autenticação; endpoint de rejeição em massa (só aprovação em massa existe) | `backend/api/v1/promocoes.py`, `classificacoes.py` |
-| Painel admin (HTML) | IMPLEMENTADO (parcial) | Listagem por status, aprovação/rejeição individual e em massa (aprovar), histórico de notas expansível | Ordenação por pontuação, exibição dos critérios do motor, rejeição em massa, mais campos informativos (restrições, clube, cupom) — ver seção 9 | `backend/static/admin/index.html` |
-| Publicação (Telegram) | PLANEJADO | Tabela `publicacoes` existe no schema | Toda a integração com a API do Telegram | `docs/GAR-1100/GAR-1100-Cap6-Endpoints-e-Coletores.md` |
-| Autenticação | PLANEJADO | Tabelas `usuarios`/`perfis` existem | JWT, proteção de rotas | `docs/GAR-1100/GAR-1100-Cap2` (referenciado, não presente neste handoff) |
-| Coletor Esfera | PENDENTE | Programa cadastrado no banco (seed) | Nenhum código de coleta | — |
-| Garimpo Emissões | EM ESTUDO | Notas de arquitetura registradas | Tudo | `docs/GAR-1100/GAR-1100-Cap8-Notas-Futuro-Emissoes.md` |
-| Testes automatizados | PENDENTE | Pasta `backend/tests/` existe, vazia | Tudo | — |
-| Controle de versão (Git) | PENDENTE | Nenhum repositório Git inicializado até o momento deste handoff | `git init`, primeiro commit, `.gitignore` | — |
+| Componente | Status | Observação |
+|---|---|---|
+| Controle de versão | IMPLEMENTADO | 16 commits; `.gitignore` cobre `.env`, `venv/`, logs, `.pytest_cache` |
+| Modelo de dados | IMPLEMENTADO | 16 tabelas, migrations 0001–0006 aplicadas |
+| Motor de Análise V1 | IMPLEMENTADO | 6 pilares; 5 dos 6 já diferenciam ofertas |
+| Coletor Livelo nativo (macOS) | IMPLEMENTADO | listagem + página de regras das campanhas; 29 testes |
+| Coletor Livelo em Docker | ABANDONADO | bloqueado por anti-robô (HTTP 403); não usar |
+| Agendamento (`launchd`) | IMPLEMENTADO | diário às 10:05; só roda com o Mac ligado e logado |
+| API (FastAPI) | IMPLEMENTADO | listagem ordenada, aprovação/rejeição individual e em lote, ingestão, reclassificação |
+| Painel admin | IMPLEMENTADO | triagem por nota, ações em lote, critérios do motor, regulamento e selos |
+| Testes automatizados | PARCIAL | 22 backend + 29 coletor, todos de lógica pura; nada de API/banco |
+| Publicação (Telegram) | PLANEJADO | tabela `publicacoes` existe, integração não |
+| Autenticação | PENDENTE | ver seção 8 |
+| Coletor Esfera | PENDENTE | nenhum código |
+
+**Dados no banco (14/08/2026):**
+
+| | |
+|---|---|
+| Promoções | 312 — 275 aprovadas, 35 pendentes, 2 rejeitadas |
+| Parceiros | 249, dos quais 248 com nome de exibição |
+| Com regulamento da campanha | 49 |
+| Com validade / cupom | 48 / 23 |
+| Marcadas como condicionadas | 80 |
+
+**Distribuição das notas:** Pouco atrativa 4, Comum 197, Boa 62, Excelente 39,
+Excepcional 10. Antes desta sessão, **todas as notas eram 60,00**.
+
+**Limitação viva:** `confianca_historica` é BAIXA nas 312. O motor compara
+dentro da família (parceiro + programa) e exige 3 campanhas na janela; como o
+coletor traz ~15 ofertas novas por dia distribuídas entre 249 parceiros,
+nenhuma família acumulou histórico ainda. Isso melhora com dias de coleta, não
+com código.
 
 ## 4. Arquitetura e fluxo de dados
 
-**Arquitetura implementada (protótipo real, não só planejada):**
-
 ```
-Coletor nativo (macOS, fora do Docker)
-    → Playwright com Chromium visível (headless=False)
-    → navega até a Livelo, extrai texto via regex
-    → POST http://localhost:8000/api/v1/promocoes/ingerir (HTTP)
+Coletor nativo (macOS, fora do Docker, Chromium visível)
+    → lê a listagem: pontuação, "Até", Clube, "Eram X", código da variante,
+      nome no alt da logo, selo "Promoção"
+    → para os cards com selo "Promoção" (~50 de 248), visita a página de
+      regras e extrai regulamento, validade e cupom
+    → POST http://localhost:8000/api/v1/promocoes/ingerir
         ↓
-Backend FastAPI (dentro do Docker)
+Backend FastAPI (Docker)
     → application/ingestao_service.py:
-        - calcula hash de dedup
-        - resolve/cria Parceiro (cadastro automático na 1ª ocorrência)
-        - cria registro em `promocoes` (status=PENDENTE)
-        - aciona application/motor/servico.py → grava `classificacoes`
+        - calcula hash de dedup (ver aviso na seção 5)
+        - resolve/cria Parceiro por (nome + código da variante)
+        - deriva valor_condicionado e marketplace_status (application/condicoes.py)
+        - cria `promocoes` (status=PENDENTE) e aciona o motor
+        - se for duplicata, complementa dados de campanha faltantes
         ↓
-PostgreSQL (Docker, dados persistidos)
+PostgreSQL (Docker, porta exposta só em 127.0.0.1)
         ↓
-Painel admin (static/admin/index.html, servido pelo próprio FastAPI)
-    → humano aprova ou rejeita
+Painel (static/admin/index.html, servido pelo próprio FastAPI)
+    → humano aprova ou rejeita, individualmente ou em lote
 ```
 
-**Por que o coletor roda fora do Docker (decisão importante):** o site da Livelo bloqueia (HTTP 403) o Chromium headless, tanto rodando dentro de um container Linux quanto nativamente no macOS. Só o Chromium **nativo do macOS rodando com janela visível** (`headless=False`) passa pela proteção. Isso não é um capricho — foi testado e comprovado nesta sessão. Ver seção 5 para o histórico completo de tentativas.
+**Por que o coletor roda fora do Docker:** a Livelo bloqueia (403) Chromium
+headless, tanto em container Linux quanto nativo no macOS. Só o Chromium nativo
+com janela visível (`headless=False`) passa. Testado e comprovado.
 
-**Entidades principais do banco** (`backend/domain/*.py`, schema completo em `docs/GAR-1100/GAR-1100-Cap3-Modelo-PostgreSQL-Fisico-Rev2.md`):
-- `dominios` → PROMOCOES (ativo) / EMISSOES (reservado, inativo).
-- `marcas` → `parceiros` (1:N) → `promocoes` (parceiro_id, programa_id).
-- `programas` → seed inicial: Livelo, Esfera.
-- `classificacoes`, `arquivos`, `publicacoes` usam referência **polimórfica** (`entidade_tipo` + `entidade_id`, sem FK nativa) para já suportar tanto `PROMOCAO` quanto o futuro `EMISSAO` sem redesenho de schema.
-- `configuracoes` implementa hierarquia de parametrização **GLOBAL → DOMÍNIO → PROGRAMA → PARCEIRO** (colunas nullable + resolução pelo mais específico) — usado pelo motor para pesos, faixas de classificação, limiar de histórico suficiente e peso temporal.
-
-**Motor de Análise V1** (`backend/application/motor/`): 6 critérios independentes (Histórico 25%, Atratividade 25%, Amplitude 20%, Facilidade 10%, Exclusividade 10%, Confiabilidade dos dados 10% — pesos configuráveis via `configuracoes`), nota final = média ponderada, categoria resolvida por faixas configuráveis (padrão: Excepcional 90-100 / Excelente 75-89 / Boa 55-74 / Comum 35-54 / Pouco atrativa 0-34). Distinção importante preservada no código: `confianca_historica` (ALTA/MEDIA/BAIXA, baseada em volume de histórico aprovado) é conceitualmente **diferente** de `confiabilidade_dados` (0-100, completude dos dados da campanha específica) — não confundir os dois ao alterar o motor.
-
-**Limitação observada em produção:** como nenhuma promoção foi aprovada ainda (todas as 251 coletadas seguem PENDENTE), o motor não tem histórico aprovado para comparar — por isso praticamente todas as notas hoje giram em torno de 55-67 (valor neutro nos critérios comparativos). Isso é esperado, não é bug. Existe um endpoint `POST /api/v1/promocoes/reclassificar-todas` para reprocessar tudo depois que houver aprovações reais.
+**Motor de Análise V1** (`backend/application/motor/`): Histórico 25%,
+Atratividade 25%, Amplitude 20%, Facilidade 10%, Exclusividade 10%,
+Confiabilidade dos dados 10% — pesos e faixas configuráveis via `configuracoes`,
+sem deploy. Distinção a preservar: `confianca_historica` (ALTA/MEDIA/BAIXA, por
+volume de histórico aprovado) é **diferente** de `confiabilidade_dados` (0-100,
+completude dos dados da campanha).
 
 ## 5. Decisões técnicas e de negócio
 
-| Decisão | Justificativa | Alternativa rejeitada | Impacto |
-|---|---|---|---|
-| Coletor Livelo roda nativo no macOS, não no Docker | Site bloqueia (403) Chromium headless em container Linux ARM64 e também headless nativo no Mac; só `headless=False` nativo passa | Chromium headless com user-agent/headers disfarçados (testado, falhou); `playwright-stealth` (abandonado — dependência `pkg_resources` incompatível); Chrome real via canal `channel="chrome"` (indisponível para Linux ARM64; download falhou no macOS por motivo não investigado a fundo) | Arquitetura tem uma exceção ao padrão "tudo em Docker": esse coletor depende do Mac estar ligado e logado |
-| Nome do parceiro extraído da URL, não do texto do card | Inspeção real do DOM mostrou que o texto visível do card **não contém** o nome do parceiro (isso só aparecia em uma ferramenta de leitura de página usada para inspeção inicial, que sintetizava texto a partir de atributos `alt` de imagem — não é texto real do DOM) | Regex sobre texto do card com prefixo "Logo Nome" (baseado em inspeção indireta, não no DOM real — não funcionou) | Extração por URL é mais robusta a mudanças de estilo visual do site |
-| Cadastro automático de Parceiro/Marca na 1ª ocorrência | Pré-cadastrar ~250 parceiros manualmente antes do MVP não é viável | Descartar promoção quando parceiro não cadastrado (comportamento original, gerava 0 promoções criadas em teste real) | Marca é criada 1:1 com o parceiro como ponto de partida; requer curadoria manual futura para agrupar marcas/definir categoria |
-| `classificacoes`/`arquivos`/`publicacoes` com referência polimórfica (`entidade_tipo`+`entidade_id`, sem FK nativa) | Preparar essas 3 tabelas para servirem também ao futuro Garimpo Emissões sem redesenho de schema | FK direta para `promocoes.id` | Integridade referencial dessas colunas precisa ser validada em código de aplicação (não há garantia do banco) |
-| Motor V1 com 6 critérios fixos e pesos configuráveis (não hardcoded) | Permite calibração via `configuracoes` sem deploy de código | Pesos fixos no código | Qualquer ajuste de peso é uma operação de dados, não de código |
-| Painel admin: HTML/JS simples servido pelo próprio FastAPI (`StaticFiles`), sem framework | Ferramenta interna, uso por 1-2 pessoas, prioridade em simplicidade de deploy | React/Vue com build separado | Sem sistema de componentes; qualquer nova feature de UI é edição direta do HTML |
-| `codigo` (BigInteger sequencial) usa `sqlalchemy.Identity()` explícito no ORM, não só `autoincrement=True` | Sem isso, o ORM assíncrono envia `NULL` explícito no INSERT e o Postgres rejeita (constraint NOT NULL) mesmo a coluna sendo IDENTITY no schema | `autoincrement=True` sozinho (causou `NotNullViolationError` em produção) | Qualquer nova tabela com coluna `codigo` sequencial precisa repetir esse padrão |
-| Base da imagem Docker do backend é `python:3.12-slim-bookworm`, não `python:3.12-slim` | A tag genérica `slim` migrou para Debian `trixie`, cujo repositório não tem os pacotes que o Playwright espera (`ttf-ubuntu-font-family` etc.) | `python:3.12-slim` (build falhava no `playwright install --with-deps`) | Fixar a tag evita quebra silenciosa em rebuilds futuros |
+### Regra de negócio mais importante: não inventar dado
+
+Reforçada três vezes pelo usuário na sessão, em contextos diferentes:
+
+1. Uma taxa fixa de câmbio (1 USD = 5 BRL) foi proposta para ordenar ofertas de
+   unidades diferentes e depois **descartada por ele**, mesmo servindo só à
+   ordenação e não sendo gravada. Preferiu-se ordenar pela nota do motor, que é
+   calculada a partir de dados reais.
+2. O card da Livelo rotula uma segunda pontuação do Olympikus como "Clube",
+   mas o regulamento diz "exclusivo para primeira compra". Decisão: **o
+   regulamento é a fonte autoritativa**; sem menção no texto, não se afirma.
+3. Uma variante do Beach Park estava nomeada com o termo que o usuário havia
+   informado ("Hotéis") e a Livelo dizia "Hospedagens". Decisão dele: *"vamos
+   seguir o que diz o Livelo, ele é a fonte da verdade"* — a fonte prevalece
+   inclusive sobre o que ele mesmo descreveu.
+
+Corolário aplicado no código: quando o dado não é observável, o campo fica
+**nulo**, nunca preenchido por dedução. É por isso que `marketplace_status` fica
+nulo nas ofertas cujo regulamento nunca foi lido, em vez de "PERMITIDO".
+
+### ⚠️ O hash de deduplicação
+
+`calcular_hash` (`application/ingestao_service.py`) define se uma oferta
+coletada é "a mesma de ontem" (descartada) ou mudança real (registro novo).
+Entram nele: programa, nome do parceiro, código da variante, pontuação, marca de
+teto, pontuação de clube, unidade, clube e cupom.
+
+**Alterar essa fórmula invalida todos os hashes gravados.** A coleta seguinte
+trataria as ~250 ofertas existentes como novas e duplicaria o histórico já
+revisado à mão. Qualquer mudança exige um script que recalcule
+`promocoes.hash_promocao` **usando a própria função** — ver
+`backend/scripts_backfill/backfill_0003.py` e `0004.py`, que fazem exatamente
+isso e foram verificados simulando o envio do coletor.
+
+Campos derivados ou de contexto ficam **fora** do hash de propósito:
+`regulamento_texto`, datas, `pontuacao_anterior`, `em_promocao`,
+`valor_condicionado`, `marketplace_status`. Eles descrevem a oferta, não a
+definem.
+
+### Exceção à imutabilidade
+
+`_completar_dados_da_campanha` preenche, numa promoção já existente, campos de
+campanha que só passamos a coletar depois. É deliberado e estreito: sem isso as
+campanhas já gravadas nunca receberiam seu regulamento, porque o hash não muda e
+a promoção seria descartada como duplicata. **Só preenche o que está vazio** e
+nunca toca no conteúdo da oferta.
+
+### Outras decisões
+
+| Decisão | Justificativa |
+|---|---|
+| Identidade do parceiro = nome + `codigo_externo` da URL | `beach-park/BPK` (Hospedagens) e `/BHP` (Ingressos) são ofertas distintas; sem o código, o motor usava o histórico de uma como se fosse da outra |
+| `nome_exibicao` separado de `nome` | `nome` entra no hash e na identidade; renomear ali faria a coleta seguinte não reconhecer o parceiro. O `nome_exibicao` **sincroniza** com o `alt` da logo, então renomear à mão no banco não se sustenta |
+| Pontuação "Até X" é gravada como X | Decisão de produto do usuário: o valor anunciado é o que se apresenta, por causa do apelo de marketing. O que muda é `pontuacao_e_teto` marcar que é limite e o motor descontar a confiabilidade |
+| `valor_condicionado` compara o valor exibido com a escada do regulamento | Sem palavra-chave e sem fator arbitrário: se o número exibido é o degrau de cima e há um degrau abaixo, é condicionado. Se já é o piso (caso comum das ofertas com Clube), não é |
+| Detalhe só dos cards com selo "Promoção" | ~50 páginas (~3 min) em vez de 248 (~12 min), e é onde o regulamento existe |
+| Lote tolera falha parcial | Uma promoção que saiu de PENDENTE entre o carregamento e o clique é ignorada e reportada, em vez de derrubar o lote |
+| Painel em HTML/JS puro, sem framework | Ferramenta interna para 1-2 pessoas; simplicidade de deploy |
+| `codigo` BigInteger usa `Identity()` explícito | Sem isso o ORM assíncrono envia NULL no INSERT e o Postgres rejeita |
+| Imagem Docker fixada em `python:3.12-slim-bookworm` | A tag genérica `slim` migrou para Debian trixie, que não tem os pacotes que o Playwright espera |
 
 ## 6. Fontes, coleta e conformidade
 
-**Fonte de dados atual:** `https://www.livelo.com.br/juntar-pontos/todos-os-parceiros` (página pública de listagem de parceiros).
+**Fonte:** `https://www.livelo.com.br/juntar-pontos/todos-os-parceiros` (público,
+sem login) e as páginas de regras dos parceiros com campanha ativa.
 
-**Premissas de coleta:**
-- Coleta roda 1x/dia (10:05, alguns minutos após a Livelo costumar atualizar às 10h — informação dada pelo usuário, **A CONFIRMAR**: não há fonte oficial documentada para esse horário de atualização, foi um entendimento informal repassado na conversa).
-- Sem paralelismo agressivo: uma navegação por execução, sem múltiplas requisições simultâneas.
-- **Nenhuma credencial, cookie de sessão ou mecanismo de bypass de autenticação é usado** — a página coletada é pública, sem login.
-- O sistema **não implementa e não deve implementar** contorno de CAPTCHA, rate limit ou qualquer controle de acesso. A solução adotada (navegador real, visível, nativo) opera dentro do que um usuário humano comum faria ao abrir a página no navegador — não há manipulação de protocolo, injeção de headers falsos além de identificação de navegador padrão, nem exploração de falha de segurança.
-- Variáveis de ambiente sensíveis (senha do Postgres, JWT secret, tokens de bot) ficam em `.env` (não versionado — ver `.env.example` para os nomes esperados). Nenhum valor real está no código ou nesta documentação.
+- Coleta 1x/dia às 10:05. **A CONFIRMAR**: o horário se baseia num entendimento
+  informal de que a Livelo atualiza às 10h; não há fonte oficial.
+- Uma navegação por página, sem paralelismo. A visita ao detalhe acrescenta ~50
+  navegações sequenciais.
+- **Nenhuma credencial, cookie de sessão ou bypass é usado.** O sistema não
+  implementa e não deve implementar contorno de CAPTCHA, rate limit ou controle
+  de acesso. A solução (navegador real, visível, nativo) opera dentro do que um
+  usuário humano faria ao abrir a página.
+- Segredos ficam em `.env` (não versionado). `.env.example` tem só placeholders.
 
-**Limitação de dados conhecida:** a variante "Clube Livelo" (pontuação diferenciada para assinantes do clube) não é capturada pelo coletor atual — não apareceu no texto visível dos cards da página de listagem durante a inspeção real feita nesta sessão. Pegar esse dado exigiria visitar a página de detalhe de cada parceiro (não implementado). **A CONFIRMAR**: se esse dado é prioritário, avaliar coleta em duas etapas (listagem + detalhe) ou aceitar a limitação por ora.
+**Limitação de dados conhecida:** as 263 ofertas **sem** selo "Promoção" não têm
+a página de regras visitada. Se houver restrição numa taxa estável, ela segue
+invisível. Buscar todas custaria ~12 minutos diários em vez de ~3.
 
 ## 7. Convenções de desenvolvimento
 
-**Stack:**
-- Backend: Python 3.12, FastAPI, SQLAlchemy 2.0 (async, `asyncpg`), Alembic, Pydantic v2.
-- Banco: PostgreSQL 16 (container Docker).
-- Coletor nativo: Python 3.9 (versão do Apple Command Line Tools, **A CONFIRMAR** se deve ser atualizado para uma versão mais recente), Playwright, `httpx`.
-- Painel admin: HTML/CSS/JS vanilla, sem framework nem build step.
-- Orquestração: Docker Compose (serviços `postgres`, `backend`, `scheduler`).
-
-**Estrutura de pastas** (raiz do projeto, hoje em `~/Garimpo/garimpo-promocoes-v2` no Mac do usuário — **A CONFIRMAR**: nome da pasta tem sufixo `-v2` por causa de uma migração feita durante a sessão anterior; existem pastas antigas não utilizadas em `~/Garimpo` — `garimpo-promocoes` e `Old - 0808` — candidatas a limpeza, mas não confirmadas como seguras para apagar):
+**Stack:** Python 3.12 / FastAPI / SQLAlchemy 2.0 async / Alembic / Pydantic v2;
+PostgreSQL 16; coletor em Python 3.9 com Playwright; painel em HTML/CSS/JS
+vanilla; Docker Compose.
 
 ```
-docker-compose.yml
-.env.example
 backend/
-  api/            # rotas FastAPI (v1/promocoes.py, v1/classificacoes.py)
-  application/    # regras de orquestração (motor/, ingestao_service.py, configuracoes_service.py, validators.py)
-  domain/         # modelos SQLAlchemy (cadastros.py, promocoes.py, motor.py, governanca.py)
-  infrastructure/ # conexão com banco (db/base.py, db/session.py)
-  coletores/      # coletor Livelo Docker (abandonado), pipeline.py, scheduler.py
-  migrations/     # Alembic
-  static/admin/   # painel HTML
-  tests/          # vazio
-coletor-nativo/   # roda fora do Docker — venv próprio
+  api/v1/          # rotas e schemas
+  application/     # ingestao_service.py, condicoes.py, motor/, configuracoes_service.py
+  domain/          # modelos SQLAlchemy
+  infrastructure/  # conexão com o banco
+  migrations/      # Alembic (0001–0006)
+  scripts_backfill/# backfills pontuais, com dry-run
+  static/admin/    # painel
+  tests/           # 22 testes de lógica pura
+coletor-nativo/    # roda fora do Docker, venv próprio
   coletor_livelo_nativo.py
-  requirements.txt
-  rodar_coletor.sh
-  com.garimpo.coletor-livelo.plist
-docs/GAR-1100/    # documentação de arquitetura e decisões (Cap. 3 a 8)
-docs/ai/          # este handoff
-scripts/backup.sh
+  test_coletor_livelo.py   # 29 testes
+docs/GAR-1100/     # arquitetura (Cap. 3 a 8)
+docs/ai/           # este handoff
 ```
 
-**Comandos principais:**
+**Comandos:**
 ```bash
-# Subir tudo
-docker compose up -d postgres
-docker compose run --rm backend alembic upgrade head   # só na 1ª vez / novas migrations
-docker compose up -d --build backend scheduler
-
-# Painel admin
-open http://localhost:8000/admin/
-
-# Coletor nativo (manual)
-cd coletor-nativo && source venv/bin/activate && python3 coletor_livelo_nativo.py
-
-# Coletor nativo (forçar execução do agendamento sem esperar o horário)
-launchctl start com.garimpo.coletor-livelo
+docker compose up -d                                    # sobe tudo
+docker compose exec backend alembic upgrade head        # migrations
+docker compose exec backend python -m pytest tests/ -q  # testes do backend
+cd coletor-nativo && ./venv/bin/python3 -m pytest test_coletor_livelo.py -q
+open http://localhost:8000/admin/                       # painel
+cd coletor-nativo && ./venv/bin/python3 coletor_livelo_nativo.py   # coleta manual
+launchctl start com.garimpo.coletor-livelo              # força o agendamento
 ```
 
-**Lint/testes:** nenhuma ferramenta configurada até o momento (`PENDENTE`). Nenhuma convenção de commit definida (Git ainda não inicializado).
+**Testes:** a suíte cobre **lógica pura** — parsing do coletor, faixas do motor,
+hash de dedup, regras de condição. Não há teste de API nem de banco; isso
+exigiria pytest-asyncio e um banco de teste, e nunca foi montado. O painel é
+validado manualmente no navegador.
 
-## 8. Pendências, riscos e dúvidas em aberto
+**Atenção:** o `pytest` está no `requirements.txt`, mas se a imagem estiver
+defasada ele some do container. `docker compose build backend` resolve.
 
-| Item | Tipo | Impacto | Informação disponível | Próxima validação necessária |
-|---|---|---|---|---|
-| Repositório sem Git | Risco | Alto — sem histórico de mudanças, sem rollback | Nenhuma | Inicializar Git, criar `.gitignore` (excluir `.env`, `venv/`, `__pycache__`, `*.log`, `diagnostico.png`) |
-| Endpoint `/promocoes/ingerir` sem autenticação | Risco de segurança | Médio (hoje só acessível via localhost) | Comentário `TODO` no código | Definir mecanismo de autenticação antes de expor além de localhost |
-| Coletor nativo depende do Mac ligado/logado | Risco operacional | Médio — coleta diária pode falhar silenciosamente | Documentado no `README.md` do coletor-nativo | Definir se isso é aceitável a longo prazo ou se precisa migrar para outra estratégia (ex: máquina sempre ligada) |
-| Nenhuma promoção aprovada ainda | Limitação temporária | Alto para a qualidade do motor | Confirmado nesta sessão (251 pendentes, 0 aprovadas) | Aprovar um lote inicial e rodar `/reclassificar-todas` para validar se as notas passam a refletir histórico real |
-| Variante "Clube Livelo" não capturada | Lacuna de dados | Médio, dependendo da prioridade de negócio | Confirmado via inspeção real do DOM | Decidir se vale coletar via página de detalhe |
-| Pasta do projeto com sufixo `-v2` e pastas antigas não utilizadas em `~/Garimpo` | Organização | Baixo | Mencionado na sessão anterior, não limpo | Confirmar com o usuário se pode reorganizar/renomear |
-| Python 3.9 no ambiente nativo do coletor | Compatibilidade | Baixo (já contornado com `from __future__ import annotations`) | Confirmado nesta sessão | Avaliar se vale migrar para Python mais recente |
-| Horário de atualização da Livelo (10h) | Premissa de negócio | Baixo | Informação repassada pelo usuário, sem fonte oficial | Observar empiricamente ao longo de alguns dias se o horário de agendamento (10:05) está bem calibrado |
+**Commits:** mensagens em português, explicando o *porquê* e não só o *o quê*.
+
+## 8. Pendências e riscos
+
+| Item | Tipo | Impacto | Próximo passo |
+|---|---|---|---|
+| Sem autenticação | Segurança | Médio | Portas já restritas a `127.0.0.1`, o que fecha o acesso pela rede. Uma chave de API no `/ingerir` seria o próximo passo; JWT completo é desproporcional hoje |
+| `aprovada_por` nulo nas 275 | Auditoria | Baixo hoje | Depende de haver usuários; importa quando houver mais de um revisor |
+| `confianca_historica` BAIXA em tudo | Limitação temporária | Alto para a qualidade do motor | Acumular dias de coleta; não há atalho |
+| 263 ofertas sem regulamento | Lacuna de dados | Médio | Decidir se vale visitar o detalhe de todas |
+| Coletor depende do Mac ligado | Operacional | Médio | Coleta diária pode falhar em silêncio; não há monitoramento |
+| Sem teste de API/banco | Qualidade | Médio | Três bugs desta sessão (MissingGreenlet, MultipleResultsFound, fuso na validade) só apareceram em execução real |
+| Categorias de parceiro vazias | Lacuna | Médio | 8 categorias cadastradas, 0 dos 249 parceiros classificado. Impede comparação por segmento |
+| Horário de atualização da Livelo | Premissa | Baixo | Observar empiricamente |
 
 ## 9. Próximas tarefas recomendadas
 
-### Tarefa 1 — Inicializar Git e organizar o repositório
-**Objetivo:** ter controle de versão real antes de qualquer nova alteração.
-**Escopo:** `git init`, `.gitignore` adequado (excluir `.env`, `venv/`, `__pycache__`, `*.log`, `diagnostico.png`, `node_modules` se houver), primeiro commit com o estado atual, confirmar com o usuário o nome definitivo da pasta do projeto.
-**Arquivos envolvidos:** raiz do repositório.
-**Critério de aceite:** `git log` mostra pelo menos um commit; `git status` limpo; segredos confirmadamente fora do controle de versão.
-**Testes esperados:** nenhum automatizado; verificação manual de que `.env` não aparece em `git status`.
-**Riscos:** nenhum arquivo sensível deve ser commitado por engano — revisar `git diff --cached` antes do primeiro commit.
+### Tarefa A — Histórico na tela (desenho aprovado, não implementado)
+Duas seções novas dentro do "Ver detalhes" que já existe, carregadas **sob
+demanda** ao expandir o card, para não voltar a fazer centenas de requisições no
+carregamento:
+- **Histórico da nota desta promoção** — como a avaliação evoluiu. Endpoint
+  `GET /promocoes/{id}/classificacoes` já existe.
+- **Histórico de ofertas deste parceiro** — como a oferta mudou ao longo dos
+  dias. `GET /promocoes?parceiro_id=X` já existe.
 
-### Tarefa 2 — Completar as melhorias pendentes do painel admin
-**Objetivo:** tornar a revisão diária de ~250 promoções viável e mais informativa (pedido explícito do usuário, não implementado antes da migração para Claude Code).
-**Escopo:**
-1. Ordenar a listagem por `pontuacao` decrescente.
-2. Exibir os critérios/subnotas do motor (`criterios_avaliados`) na tela, não só a nota final e a justificativa — provavelmente como um painel expansível, seguindo o mesmo padrão já usado para "Ver histórico de notas".
-3. Adicionar rejeição em massa: endpoint `POST /api/v1/promocoes/rejeitar-lote` (análogo ao `aprovar-lote` já existente) + botão "Rejeitar selecionadas" na barra de seleção.
-4. Exibir mais campos no card: `regulamento_texto`/`regulamento_resumo`, `marketplace_status`, `abrangencia`, `restricoes`, `requer_clube`+`qual_clube`, `requer_cupom`+`cupom`, `disponibilidade` — hoje esses campos existem no banco e no schema `PromocaoIngerirIn`, mas não estão em `PromocaoOut` nem na tela.
-**Arquivos possivelmente envolvidos:** `backend/api/v1/schemas.py` (adicionar campos a `PromocaoOut`), `backend/api/v1/promocoes.py` (novo endpoint de rejeição em massa), `backend/static/admin/index.html`.
-**Critério de aceite:** as 4 melhorias funcionando no painel visual, testadas manualmente contra dados reais já no banco.
-**Testes esperados:** nenhum automatizado ainda; validação manual no navegador.
-**Riscos:** ao adicionar campos a `PromocaoOut`, garantir que os relacionamentos SQLAlchemy (`lazy="joined"`) continuem evitando N+1 queries.
+Não precisa de endpoint novo nem migration — é trabalho só de tela.
 
-### Tarefa 3 — Primeira rodada real de aprovações e validação do reprocessamento
-**Objetivo:** sair do estado "0 promoções aprovadas" e validar que o motor de fato melhora com histórico real.
-**Escopo:** revisar e aprovar um lote representativo de promoções pendentes (usando as ferramentas de aprovação em massa), depois rodar `POST /api/v1/promocoes/reclassificar-todas` e comparar as notas antes/depois usando o histórico de classificações já implementado.
-**Arquivos possivelmente envolvidos:** nenhum código novo necessariamente — pode ser só operação via painel admin. Se o comportamento não for o esperado, revisar `backend/application/motor/historico.py` e `servico.py`.
-**Critério de aceite:** promoções da mesma família (parceiro+programa) recebem notas visivelmente diferentes conforme a pontuação se compara ao histórico aprovado (não mais todas em ~55-67).
-**Testes esperados:** validação manual comparando `criterios_avaliados.historico` antes e depois do reprocessamento.
-**Riscos:** nenhum técnico direto; risco de negócio é aprovar promoções de baixa qualidade só para gerar histórico — vale avisar o usuário desse trade-off.
+### Tarefa B — Categorizar parceiros
+Habilita comparação por segmento, que o usuário pediu ("clientes do mesmo
+segmento"). Hoje o motor compara com o programa inteiro. Exige classificar 249
+parceiros — decidir se manual ou heurístico.
 
-## 10. Roteiro da primeira sessão no Claude Code
+### Tarefa C — Teste de API e banco
+As três falhas mais caras desta sessão passaram por toda a suíte de lógica pura
+e só apareceram rodando o coletor de verdade. Montar pytest-asyncio com banco de
+teste fecharia essa lacuna.
 
-1. Ler este arquivo (`docs/ai/HANDOFF.md`) por completo antes de qualquer ação.
-2. Mapear o repositório: confirmar estrutura de pastas real vs. a descrita na seção 7, identificar se Git já foi inicializado (situação pode ter mudado desde a escrita deste handoff), rodar `docker compose ps` para ver o que está no ar, verificar se `coletor-nativo/venv` existe e está funcional.
-3. Comparar a documentação em `docs/GAR-1100/` com o código real em `backend/` — sinalizar qualquer divergência encontrada (o código pode ter evoluído além do que está documentado, ou vice-versa).
-4. Apontar explicitamente quaisquer lacunas ou inconsistências encontradas, incluindo status desatualizado neste handoff se algo já tiver mudado.
-5. Propor um plano concreto para a Tarefa 1 (Git) ou a tarefa que o usuário priorizar, com passos claros.
-6. **Não alterar nenhum arquivo até receber aprovação explícita do usuário** — inclusive não rodar `git init` ou criar `.gitignore` sem confirmação, mesmo sendo a tarefa recomendada com maior prioridade.
+## 10. Roteiro da próxima sessão
 
-## 11. Documentos e arquivos para leitura prioritária
+1. Ler este arquivo por completo.
+2. Conferir o estado real antes de agir: `git log --oneline`, `docker compose ps`,
+   contagem por status em `promocoes`. **Os números da seção 3 são de 14/08 e
+   envelhecem a cada coleta diária.**
+3. Conferir se a coleta automática das 10:05 rodou e quantos registros criou. O
+   esperado é ~15/dia; centenas indicariam que o hash foi invalidado (seção 5).
+4. Perguntar ao usuário a prioridade antes de escolher tarefa.
+5. Não alterar arquivos sem aprovação explícita.
 
-1. `docs/ai/HANDOFF.md` — este arquivo; ponto de entrada obrigatório.
-2. `docs/GAR-1100/GAR-1100-Cap3-Modelo-PostgreSQL-Fisico-Rev2.md` — schema completo do banco, DDL de referência.
-3. `docs/GAR-1100/GAR-1100-Cap4-Dicionario-de-Dados-V1.md` — significado campo a campo das tabelas mais sensíveis (`promocoes`, `classificacoes`, `configuracoes`).
-4. `backend/domain/*.py` — modelos SQLAlchemy reais (fonte da verdade do schema em código, comparar com o Cap. 3).
-5. `backend/application/motor/servico.py` e `pilares.py` — lógica do Motor de Análise V1, núcleo de negócio do sistema.
-6. `backend/application/ingestao_service.py` — regra central de ingestão (dedup, cadastro automático de parceiro, acionamento do motor).
-7. `coletor-nativo/coletor_livelo_nativo.py` — coletor real em produção; ler os comentários no topo do arquivo antes de qualquer alteração, explicam por que ele existe fora do Docker.
-8. `backend/static/admin/index.html` — painel administrativo; ponto de partida para a Tarefa 2.
-9. `docs/GAR-1100/GAR-1100-Cap8-Notas-Futuro-Emissoes.md` — contexto para não tomar decisões que dificultem o futuro Garimpo Emissões.
-10. `docker-compose.yml` e `backend/Dockerfile` — antes de qualquer mudança de infraestrutura, notar o comentário sobre a tag `bookworm` (seção 5 deste handoff explica o porquê).
+## 11. Leitura prioritária
+
+1. Este arquivo.
+2. `backend/application/ingestao_service.py` — dedup, identidade do parceiro,
+   exceção à imutabilidade. É o coração das regras.
+3. `backend/application/condicoes.py` — como se decide "condicionada" e o
+   alcance no marketplace.
+4. `backend/application/motor/pilares.py` e `servico.py` — os 6 critérios.
+5. `coletor-nativo/coletor_livelo_nativo.py` — ler os comentários do topo antes
+   de mexer; explicam por que ele vive fora do Docker.
+6. `backend/static/admin/index.html` — painel.
+7. `docs/GAR-1100/GAR-1100-Cap3-Modelo-PostgreSQL-Fisico-Rev2.md` — schema
+   físico de referência.
+8. `docs/GAR-1100/GAR-1100-Cap4-Dicionario-de-Dados-V1.md` — significado campo a
+   campo. **Atenção:** os capítulos 3 e 4 descrevem o schema original e não
+   incluem as colunas adicionadas pelas migrations 0003 a 0006; a fonte da
+   verdade do schema é `backend/domain/*.py`.
+
+## 12. Afirmações do handoff anterior que se provaram falsas
+
+Registradas para que ninguém as reutilize:
+
+- *"Aprovação em massa já existe, falta a rejeição"* — **nenhuma das duas
+  existia**. Ambas foram implementadas em 14/08.
+- *"Histórico de notas expansível já implementado"* — não existia, e ainda não
+  existe. O desenho está na Tarefa A.
+- *"251 pendentes, 0 aprovadas"* — desatualizado já na abertura da sessão.
+- *"O nome do parceiro só aparece numa ferramenta que sintetiza texto a partir
+  de atributos `alt` — não é texto real do DOM"* — **conclusão errada**. O `alt`
+  é dado real do DOM e está presente nos 248 cards; é a única fonte que nomeia
+  as variantes (Liga Vitória Consórcio, Hero Seguro Viagem).
+- *"Endpoints hoje só acessíveis via localhost"* — era falso. O
+  `docker-compose.yml` publicava em todas as interfaces, deixando API e banco
+  alcançáveis por qualquer aparelho da rede. Corrigido em 14/08.
+- Referência a `docs/GAR-1100/GAR-1100-Cap8-Notas-Futuro-Emissoes.md` — o
+  arquivo **não existe**; o diretório tem apenas os capítulos 3 a 7. As notas de
+  arquitetura do Garimpo Emissões, se existirem, estão fora deste repositório.
