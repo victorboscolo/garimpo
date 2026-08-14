@@ -1,6 +1,20 @@
-"""Processo separado (container `scheduler` no docker-compose) que dispara
-os coletores periodicamente. Roda isolado da API para que uma falha aqui
-nunca derrube o backend web.
+"""Agendador em processo separado. NÃO ESTÁ EM USO desde 14/08/2026.
+
+Foi desligado por dois motivos que se somavam. Ele disparava `ColetorLivelo`, o
+coletor que roda dentro do Docker e é bloqueado pela proteção anti-robô da
+Livelo com HTTP 403 — ou seja, executava código que não podia dar certo. E,
+mesmo isso, ele não executava: rodando em container, perdia as execuções sempre
+que o Mac dormia, acumulando avisos de "run time was missed by 3:17:28" por
+dias seguidos.
+
+O que de fato roda está no `launchd` do macOS, que recupera execuções perdidas
+ao acordar: a coleta diária (`coletor-nativo/com.garimpo.coletor-livelo.plist`)
+e a recalibração semanal (`scripts/com.garimpo.recalibrar.plist`).
+
+O arquivo permanece porque a estrutura serve a um coletor futuro que consiga
+rodar dentro do container — a Esfera, por exemplo, se não tiver a mesma
+proteção. Para religar, é preciso recriar o serviço no docker-compose e resolver
+antes o problema das execuções perdidas.
 """
 import asyncio
 import logging

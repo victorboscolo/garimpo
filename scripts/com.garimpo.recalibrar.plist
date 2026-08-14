@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.garimpo.recalibrar</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/victor/Garimpo/garimpo-promocoes-v2/scripts/recalibrar.sh</string>
+    </array>
+
+    <!-- Segunda-feira às 11h: depois da coleta das 10:05, para que a semana
+         comece com todas as notas na mesma régua. Semanal, e não diário,
+         porque entram ~15 ofertas por dia em mais de 300 — a base muda pouco
+         de um dia para o outro, e cada reprocessamento é uma chance de
+         divergir do que já foi publicado. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key>
+        <integer>1</integer>
+        <key>Hour</key>
+        <integer>11</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/victor/Garimpo/garimpo-promocoes-v2/scripts/recalibrar.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/victor/Garimpo/garimpo-promocoes-v2/scripts/recalibrar-erro.log</string>
+</dict>
+</plist>
