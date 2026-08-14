@@ -42,6 +42,35 @@ def test_card_com_clube_usa_a_pontuacao_de_qualquer_cliente():
     assert card.requer_clube is False
 
 
+def test_pontuacao_do_clube_capturada_quando_existe():
+    """Card real da Beleza na Web em 13/08/2026: 8 pontos para qualquer
+    cliente e 10 para assinantes do Clube Livelo. As duas são informação útil.
+    """
+    card = _parsear_card(
+        "Promoção\nAté 8 pontos por R$ 1\nEram 2 pontos\nClube\nAté 10 pontos por R$ 1\nEram 2 pontos\nIr para regras do parceiro",
+        "/juntar-pontos/parceiros/beleza-na-web/BLZ",
+    )
+    assert card.pontuacao == Decimal("8")
+    assert card.pontuacao_clube == Decimal("10")
+
+
+def test_sem_clube_a_pontuacao_de_clube_fica_vazia():
+    card = _parsear_card("2 pontos por R$ 1\nIr para regras do parceiro", "/juntar-pontos/parceiros/beach-park/BPK")
+    assert card.pontuacao_clube is None
+
+
+def test_clube_nao_confunde_a_pontuacao_principal():
+    """O valor do Clube é sempre maior; se fosse ele a virar `pontuacao`, a
+    oferta pareceria melhor do que é para quem não assina.
+    """
+    card = _parsear_card(
+        "Promoção\n5 pontos por R$ 1\nEram 1 ponto\nClube\n15 pontos por R$ 1\nEram 1 ponto\nIr para regras do parceiro",
+        "/juntar-pontos/parceiros/olympikus/OVC",
+    )
+    assert card.pontuacao == Decimal("5")
+    assert card.pontuacao_clube == Decimal("15")
+
+
 def test_codigo_da_variante_extraido_da_url():
     """Beach Park tem duas ofertas sob o mesmo slug, distintas só pelo código:
     BPK são os Hotéis (2 pts) e BHP os Ingressos (1 pt).

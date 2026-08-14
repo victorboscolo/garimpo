@@ -46,6 +46,15 @@ def test_mudar_de_valor_fixo_para_teto_gera_hash_diferente():
     assert calcular_hash(fixo) != calcular_hash(teto)
 
 
+def test_mudanca_na_pontuacao_do_clube_gera_hash_diferente():
+    """Se a oferta do Clube sobe de 10 para 15 e o resto fica igual, a oferta
+    mudou — tem que virar registro novo em vez de ser descartada como duplicata.
+    """
+    antes = _bruta(pontuacao_clube=Decimal("10"))
+    depois = _bruta(pontuacao_clube=Decimal("15"))
+    assert calcular_hash(antes) != calcular_hash(depois)
+
+
 def test_pontuacao_diferente_gera_hash_diferente():
     assert calcular_hash(_bruta(pontuacao=Decimal("2"))) != calcular_hash(_bruta(pontuacao=Decimal("3")))
 

@@ -57,6 +57,9 @@ class PromocaoBruta:
     # "Ate X pontos" e um teto promocional, nao um valor garantido. O valor
     # coletado continua sendo X; esta marca diz que ele e um limite.
     pontuacao_e_teto: bool = False
+    # Pontuacao para assinantes do Clube Livelo, quando o card traz as duas.
+    # `pontuacao` continua sendo sempre a de qualquer cliente.
+    pontuacao_clube: Decimal | None = None
     # Codigo da variante na URL. Um mesmo slug pode ter ofertas diferentes:
     # beach-park/BPK sao os Hoteis e beach-park/BHP os Ingressos.
     codigo_externo: str | None = None
@@ -96,6 +99,14 @@ def _parsear_card(texto: str, href: str) -> PromocaoBruta | None:
     ate, valor, moeda, base = m_pontos.groups()
     e_teto = ate is not None
 
+    # Depois da palavra "Clube" vem a pontuacao para assinantes. Verificado nos
+    # 15 cards com clube em 13/08/2026: a de qualquer cliente vem sempre antes.
+    pontuacao_clube = None
+    if "Clube" in texto:
+        m_clube = PADRAO_PONTOS.search(texto.split("Clube", 1)[1])
+        if m_clube:
+            pontuacao_clube = Decimal(m_clube.group(2))
+
     nome = _extrair_nome_da_url(href)
 
     m_eram = PADRAO_ERAM.search(texto)
@@ -118,6 +129,7 @@ def _parsear_card(texto: str, href: str) -> PromocaoBruta | None:
         unidade_pontuacao=UNIDADE_POR_MOEDA.get(moeda, "pontos_por_real"),
         regulamento_texto=descricao,
         pontuacao_e_teto=e_teto,
+        pontuacao_clube=pontuacao_clube,
         codigo_externo=_extrair_codigo_da_url(href),
     )
 
@@ -196,6 +208,7 @@ async def enviar_para_api(promocoes: list[PromocaoBruta]) -> None:
                 "requer_cupom": p.requer_cupom,
                 "cupom": p.cupom,
                 "pontuacao_e_teto": p.pontuacao_e_teto,
+                "pontuacao_clube": str(p.pontuacao_clube) if p.pontuacao_clube is not None else None,
                 "codigo_externo": p.codigo_externo,
                 "origem_detalhe": "COLETOR_NATIVO_LIVELO",
             }

@@ -43,6 +43,11 @@ class Promocao(Base):
     # o motor a usa para reduzir a confiabilidade dos dados.
     pontuacao_e_teto: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # Pontuação para assinantes do Clube Livelo, quando o card anuncia as duas.
+    # `pontuacao` continua sendo sempre a de qualquer cliente — a distinção
+    # existe porque a oferta maior é condicionada a assinatura.
+    pontuacao_clube: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+
     requer_clube: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     qual_clube: Mapped[str | None] = mapped_column(String(100))
     requer_cupom: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

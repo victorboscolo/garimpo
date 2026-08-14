@@ -170,16 +170,31 @@
 
   /* "Até X pontos" é teto anunciado, não valor garantido — precisa saltar aos
      olhos, porque são justamente essas ofertas que lideram o ranking. */
-  .teto-tag {
+  .tag-condicionada {
     font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    padding: 2px 6px;
+    padding: 2px 7px;
     border-radius: 5px;
-    background: var(--excepcional-bg);
-    color: var(--excepcional);
-    cursor: help;
+    background: var(--pouco-bg);
+    color: var(--pouco);
+    border: 1px solid var(--pouco);
+    vertical-align: 1px;
+  }
+
+  .clube-extra { color: var(--boa); font-weight: 600; }
+
+  .aviso-condicionada {
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--pouco);
+    background: var(--pouco-bg);
+    border-left: 3px solid var(--pouco);
+    padding: 7px 10px;
+    border-radius: 0 7px 7px 0;
+    margin: -4px 0 10px;
+    max-width: 58ch;
   }
 
   .categoria-badge {
@@ -500,7 +515,7 @@ async function carregar() {
           <span class="programa-tag">${esc(p.programa_nome)}</span>
           <span class="origem-tag origem-${esc(p.origem)}">${esc(formatOrigem(p))}</span>
         </div>
-        <div class="pontuacao">${p.pontuacao_e_teto ? '<span class="teto-tag" title="A Livelo anuncia &quot;Até&quot; este valor — é um teto, não uma garantia. As condições ficam na página de regras do parceiro.">até</span> ' : ""}<b>${esc(p.pontuacao)}</b> ${esc(formatUnidade(p.unidade_pontuacao))}</div>
+        ${renderPontuacao(p)}
         <div class="coletado-em">Coletado em ${formatData(p.created_at)}</div>
         ${renderClassificacao(p)}
         ${renderSelos(p)}
@@ -514,6 +529,28 @@ async function carregar() {
     `;
     lista.appendChild(card);
   }
+}
+
+function renderPontuacao(p) {
+  // O número grande continua liderando — é a informação real da campanha e o
+  // que dá apelo à publicação. O qualificador vem colado nele, nunca escondido:
+  // a Beleza na Web anuncia "até 8" e paga 4 na maior parte da loja.
+  const clube = p.pontuacao_clube
+    ? ` <span class="clube-extra">· ${esc(p.pontuacao_clube)} no Clube</span>`
+    : "";
+
+  const aviso = p.pontuacao_e_teto ? `
+    <div class="aviso-condicionada">
+      Valor máximo anunciado — costuma valer só para marcas ou produtos
+      específicos. Confira as regras do parceiro antes de publicar.
+    </div>` : "";
+
+  return `
+    <div class="pontuacao">
+      ${p.pontuacao_e_teto ? '<span class="tag-condicionada">⚠ condicionada</span> ' : ""}
+      <b>${esc(p.pontuacao)}</b> ${esc(formatUnidade(p.unidade_pontuacao))}${clube}
+    </div>
+    ${aviso}`;
 }
 
 function renderClassificacao(p) {

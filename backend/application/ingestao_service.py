@@ -35,6 +35,7 @@ class PromocaoBrutaIn:
     requer_cupom: bool = False
     cupom: str | None = None
     pontuacao_e_teto: bool = False
+    pontuacao_clube: Decimal | None = None
     codigo_externo: str | None = None
 
 
@@ -57,6 +58,7 @@ def calcular_hash(bruta: PromocaoBrutaIn) -> str:
         str(bruta.codigo_externo),
         str(bruta.pontuacao),
         str(bruta.pontuacao_e_teto),
+        str(bruta.pontuacao_clube),
         bruta.unidade_pontuacao,
         str(bruta.requer_clube),
         str(bruta.qual_clube),
@@ -128,6 +130,7 @@ async def ingerir_promocao_bruta(
         pontuacao=bruta.pontuacao,
         unidade_pontuacao=bruta.unidade_pontuacao,
         pontuacao_e_teto=bruta.pontuacao_e_teto,
+        pontuacao_clube=bruta.pontuacao_clube,
         requer_clube=bruta.requer_clube,
         qual_clube=bruta.qual_clube,
         requer_cupom=bruta.requer_cupom,
