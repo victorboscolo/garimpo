@@ -10,6 +10,12 @@ da oferta.
 O AVANCADO acrescenta o que permite julgar a oferta a fundo: a pontuação fora da
 campanha, o regulamento na íntegra, o alcance no marketplace e a validade
 completa.
+
+Sem marcação de formatação, de propósito. O Markdown do Telegram quebra quando o
+texto contém `_` ou `*` desbalanceados, e tanto o nome do parceiro quanto o
+regulamento vêm de fonte externa — um underscore no lugar errado derrubaria o
+envio ou faria o símbolo aparecer cru na mensagem. Emoji e quebra de linha dão
+a hierarquia visual necessária sem nada para escapar.
 """
 from decimal import Decimal
 
@@ -26,10 +32,14 @@ UNIDADE_MOEDA = {
     "pontos_por_dolar": "U$ 1",
 }
 
+# PERMITIDO não aparece aqui de propósito. Ele é inferido do silêncio do
+# regulamento — serve ao motor para entender que a oferta não é restrita, mas
+# publicá-lo afirmaria que o parceiro TEM marketplace. O Consórcio Embracon não
+# tem, e a mensagem dizia "vale também para o marketplace". Ausência de
+# restrição não é existência de canal de venda.
 MARKETPLACE_ROTULO = {
     "PROIBIDO": "🏪 Só vale para produtos vendidos e entregues pela loja",
     "PARCIAL": "🏪 Compras no marketplace pontuam menos",
-    "PERMITIDO": "🏪 Vale também para o marketplace",
 }
 
 
@@ -60,7 +70,7 @@ def montar_mensagem(promocao, classificacao, tipo: str) -> str:
 
     unidade = promocao.unidade_pontuacao
     teto = "até " if promocao.pontuacao_e_teto else ""
-    linhas.append(f"*{promocao.parceiro_nome}* — {teto}{_pontos(promocao.pontuacao, unidade)}")
+    linhas.append(f"{promocao.parceiro_nome} — {teto}{_pontos(promocao.pontuacao, unidade)}")
 
     if promocao.pontuacao_clube:
         linhas.append(f"💳 {_pontos(promocao.pontuacao_clube, unidade)} para assinantes do Clube")
@@ -71,7 +81,7 @@ def montar_mensagem(promocao, classificacao, tipo: str) -> str:
         linhas.append("⚠️ Oferta condicionada — confira as regras antes de comprar")
 
     if promocao.requer_cupom and promocao.cupom:
-        linhas.append(f"🎫 Use o cupom *{promocao.cupom}* no carrinho")
+        linhas.append(f"🎫 Use o cupom {promocao.cupom} no carrinho")
 
     if promocao.data_fim:
         linhas.append(f"🗓 Até {_formatar_data(promocao.data_fim)}")
@@ -82,7 +92,7 @@ def montar_mensagem(promocao, classificacao, tipo: str) -> str:
         if promocao.marketplace_status in MARKETPLACE_ROTULO:
             linhas.append(MARKETPLACE_ROTULO[promocao.marketplace_status])
         if promocao.regulamento_texto:
-            linhas += ["", f"_{promocao.regulamento_texto}_"]
+            linhas += ["", promocao.regulamento_texto]
 
     linhas += ["", f"🔗 {promocao.url_origem}"]
     return "\n".join(linhas)

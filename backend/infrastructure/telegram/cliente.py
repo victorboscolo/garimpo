@@ -60,7 +60,8 @@ async def enviar(tipo: str, texto: str) -> None:
             json={
                 "chat_id": canal,
                 "text": texto,
-                "parse_mode": "Markdown",
+                # Sem parse_mode: a mensagem é texto puro. Ver o porquê em
+                # application/telegram/mensagens.py.
                 # O link já aparece no texto; a prévia automática ocuparia a
                 # tela toda e enterraria as mensagens seguintes.
                 "disable_web_page_preview": True,
