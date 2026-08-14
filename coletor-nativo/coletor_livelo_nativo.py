@@ -268,22 +268,38 @@ def _aplicar_regulamento(item: PromocaoBruta, regulamento: str) -> None:
         item.pontuacao_clube = None
 
 
-async def enriquecer_com_detalhe(page, item: PromocaoBruta) -> None:
+async def enriquecer_com_detalhe(page, item: PromocaoBruta, tentativas: int = 2) -> None:
     """Visita a pagina do parceiro e preenche regulamento, validade e cupom.
 
-    Falha de uma pagina nao derruba a coleta: a promocao segue com o que veio
-    da listagem, apenas sem os dados de restricao.
+    Tenta mais de uma vez porque desistir na primeira falha tem custo alto: o
+    cupom entra no hash de deduplicacao, entao gravar a oferta sem ele e
+    descobri-lo na execucao seguinte cria um registro duplicado da mesma
+    oferta, um com a informacao e outro sem. Ja aconteceu com Carters,
+    Individual e John John em 14/08/2026.
+
+    Se todas as tentativas falharem, a promocao segue com o que veio da
+    listagem — perder a oferta seria pior que perder a restricao.
     """
-    try:
-        resposta = await page.goto(item.url_origem, wait_until="domcontentloaded", timeout=30000)
-        if not resposta or resposta.status != 200:
-            logger.warning("Detalhe de '%s': HTTP %s", item.parceiro_nome_bruto,
-                           resposta.status if resposta else "sem resposta")
-            return
-        await page.wait_for_timeout(2500)
-        texto = await page.locator("body").inner_text()
-    except Exception as e:
-        logger.warning("Detalhe de '%s' falhou: %s", item.parceiro_nome_bruto, e)
+    texto = None
+    for tentativa in range(1, tentativas + 1):
+        try:
+            resposta = await page.goto(item.url_origem, wait_until="domcontentloaded", timeout=30000)
+            if resposta and resposta.status == 200:
+                await page.wait_for_timeout(2500)
+                texto = await page.locator("body").inner_text()
+                break
+            motivo = f"HTTP {resposta.status}" if resposta else "sem resposta"
+        except Exception as e:
+            motivo = str(e)
+
+        if tentativa < tentativas:
+            logger.warning("Detalhe de '%s' falhou (%s), tentando de novo.", item.parceiro_nome_bruto, motivo)
+            await page.wait_for_timeout(2000)
+        else:
+            logger.warning("Detalhe de '%s' falhou em %d tentativas (%s).",
+                           item.parceiro_nome_bruto, tentativas, motivo)
+
+    if texto is None:
         return
 
     regulamento = _extrair_regulamento(texto)
