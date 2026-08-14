@@ -97,9 +97,19 @@ async def montar_fila(db, config: dict, tipo: str | None = None) -> list[dict]:
     from domain.motor import ENTIDADE_PROMOCAO, Classificacao, Publicacao
     from domain.promocoes import Promocao
 
+    from infrastructure.telegram import cliente
+
     canais = list((config.get("canais") or {}).keys())
     if tipo:
         canais = [c for c in canais if c == tipo]
+
+    # Canal sem configuração no .env não é fila, é canal que ainda não existe.
+    # Mantê-lo na lista misturava itens impossíveis de enviar e fazia o disparo
+    # recusar o lote inteiro — inclusive os itens do canal que estava pronto.
+    ignorados = [c for c in canais if not cliente.esta_configurado(c)]
+    if ignorados:
+        logger.info("Canais fora da fila por falta de configuração: %s", ", ".join(ignorados))
+    canais = [c for c in canais if cliente.esta_configurado(c)]
 
     stmt = (
         select(Promocao, Classificacao)
