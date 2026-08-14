@@ -644,6 +644,13 @@ function renderSelos(p) {
   if (p.data_fim) {
     selos.push(`<span class="selo">🗓 Válida até ${formatDataCurta(p.data_fim)}</span>`);
   }
+  // Onde a compra é feita muda quanto se pontua, e o cliente costuma descobrir
+  // tarde demais. Só aparece quando o regulamento afirma — nunca por dedução.
+  if (p.marketplace_status === "PROIBIDO") {
+    selos.push(`<span class="selo selo-marketplace">🏪 Só vendido e entregue pela loja</span>`);
+  } else if (p.marketplace_status === "PARCIAL") {
+    selos.push(`<span class="selo selo-marketplace">🏪 Marketplace pontua menos</span>`);
+  }
   if (p.requer_clube) {
     selos.push(`<span class="selo">🏷 Exige Clube${p.qual_clube ? ": " + esc(p.qual_clube) : ""}</span>`);
   }

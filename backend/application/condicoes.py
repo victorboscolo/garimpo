@@ -20,6 +20,16 @@ from decimal import Decimal, InvalidOperation
 # o que evita ler datas ("14 a 16/08/2026") ou percentuais como pontuação.
 PADRAO_PONTOS_NO_TEXTO = re.compile(r"(\d+)\s*pontos?\b", re.IGNORECASE)
 
+# Só é regulamento de campanha o texto que a página de regras devolve; a frase
+# que o coletor antigo escrevia sobre si mesmo não diz nada sobre a oferta.
+PADRAO_TEM_CAMPANHA = re.compile(r"campanha v[áa]lida", re.IGNORECASE)
+
+# "produtos vendidos e entregues por X" — a oferta se limita ao estoque próprio
+# da loja, deixando de fora os vendedores terceiros.
+PADRAO_ESTOQUE_PROPRIO = re.compile(r"vendid[oa]s?\s+e\s+entregu", re.IGNORECASE)
+
+PADRAO_MARKETPLACE = re.compile(r"marketplace", re.IGNORECASE)
+
 
 def _valores_citados(regulamento: str) -> list[Decimal]:
     valores = []
@@ -56,3 +66,35 @@ def valor_e_condicionado(
         return False
 
     return pontuacao > min(valores)
+
+
+def resolver_marketplace(regulamento_texto: str | None) -> str | None:
+    """Diz se compras de vendedores terceiros pontuam, lendo o regulamento.
+
+    Marketplaces vendem estoque próprio e de terceiros, e onde a compra é feita
+    muda quanto se pontua — algo que o cliente costuma descobrir tarde demais.
+    Os três valores já existiam no schema e o pilar Amplitude do motor já reage
+    a eles; faltava alguém preenchê-los.
+
+    - PARCIAL: o texto dá uma taxa própria ao marketplace. Terceiros pontuam,
+      só que menos ("3 pontos vendidos e entregues por Magalu e 2 pontos para
+      marketplace").
+    - PROIBIDO: o texto limita a oferta ao estoque próprio e não oferece taxa
+      alguma a terceiros ("10 pontos em produtos vendidos e entregues por
+      Quero-Quero").
+    - PERMITIDO: há regulamento e ele não restringe. Silêncio num texto que
+      existe é evidência de que vale para a compra inteira.
+    - None: não há regulamento. A oferta não tem campanha ativa e sua página de
+      regras nunca foi visitada — isso não é ausência de restrição, é ausência
+      de leitura, e afirmar "permitido" aqui seria inventar.
+    """
+    if not regulamento_texto or not PADRAO_TEM_CAMPANHA.search(regulamento_texto):
+        return None
+
+    # A ordem importa: um texto pode citar as duas coisas, e nesse caso o que
+    # vale é haver taxa para o marketplace — ele pontua, ainda que menos.
+    if PADRAO_MARKETPLACE.search(regulamento_texto):
+        return "PARCIAL"
+    if PADRAO_ESTOQUE_PROPRIO.search(regulamento_texto):
+        return "PROIBIDO"
+    return "PERMITIDO"

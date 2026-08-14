@@ -65,3 +65,45 @@ def test_ignora_numeros_que_nao_sao_pontuacao():
     """A data no início do texto não pode ser lida como pontuação."""
     reg = "Campanha válida de 14 a 16/08/2026. Ganhe 6 pontos por real gasto."
     assert valor_e_condicionado(Decimal("6"), reg, pontuacao_e_teto=False) is False
+
+
+# --- Alcance no marketplace ---------------------------------------------------
+#
+# Marketplaces vendem estoque próprio e de vendedores terceiros. Onde a compra
+# é feita muda quanto se pontua, e o cliente descobre isso tarde demais.
+
+from application.condicoes import resolver_marketplace
+
+
+def test_marketplace_com_taxa_propria_e_parcial():
+    """Magalu: 3 pontos no estoque próprio, 2 no marketplace. Terceiros
+    pontuam, só que menos.
+    """
+    reg = ("Campanha válida de 14 a 16/08/2026. Ganhe 3 pontos por real gasto em produtos "
+           "vendidos e entregues por Magalu e 2 pontos por real para marketplace.")
+    assert resolver_marketplace(reg) == "PARCIAL"
+
+
+def test_apenas_vendidos_e_entregues_e_proibido():
+    """Quero-Quero limita a oferta ao estoque próprio e não dá taxa alguma ao
+    marketplace: comprar de terceiro não pontua.
+    """
+    reg = ("Campanha válida de 14 a 16/08/2026. Ganhe 10 pontos a cada real gasto em "
+           "produtos vendidos e entregues por Quero-Quero. Utilize o cupom LIVELO.")
+    assert resolver_marketplace(reg) == "PROIBIDO"
+
+
+def test_regulamento_que_nao_toca_no_assunto_e_permitido():
+    """Havendo regulamento e ele não restringindo, vale para a compra toda —
+    silêncio num texto que existe é evidência, não lacuna.
+    """
+    reg = "Campanha válida de 14 a 16/08/2026. Ganhe 11 pontos por real gasto. Utilize o cupom LIVELO."
+    assert resolver_marketplace(reg) == "PERMITIDO"
+
+
+def test_sem_regulamento_nao_se_conclui_nada():
+    """Oferta sem campanha ativa não tem a página de regras visitada. Não é
+    ausência de restrição — é ausência de leitura.
+    """
+    assert resolver_marketplace(None) is None
+    assert resolver_marketplace("Coletado do site oficial da Livelo.") is None

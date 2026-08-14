@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import set_committed_value
 
-from application.condicoes import valor_e_condicionado
+from application.condicoes import resolver_marketplace, valor_e_condicionado
 from application.motor.servico import classificar_promocao
 from domain.cadastros import Marca, Parceiro, Programa
 from domain.promocoes import Promocao
@@ -118,6 +118,11 @@ def _completar_dados_da_campanha(existente: Promocao, bruta: PromocaoBrutaIn) ->
     )
     if existente.valor_condicionado != condicionado:
         existente.valor_condicionado = condicionado
+        mudou = True
+
+    marketplace = resolver_marketplace(existente.regulamento_texto)
+    if marketplace is not None and existente.marketplace_status != marketplace:
+        existente.marketplace_status = marketplace
         mudou = True
 
     return mudou
@@ -229,6 +234,7 @@ async def ingerir_promocao_bruta(
         valor_condicionado=valor_e_condicionado(
             bruta.pontuacao, bruta.regulamento_texto, bruta.pontuacao_e_teto
         ),
+        marketplace_status=resolver_marketplace(bruta.regulamento_texto),
         data_inicio=bruta.data_inicio,
         data_fim=bruta.data_fim,
         requer_clube=bruta.requer_clube,
