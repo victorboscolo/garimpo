@@ -89,6 +89,12 @@ class PromocaoBruta:
     # Nome legivel vindo do alt da logo ("Liga Vitoria Consorcio"). So para
     # exibicao — a identidade do parceiro continua sendo nome+codigo da URL.
     nome_exibicao: str | None = None
+    # "Eram 1 ponto": valor anterior da oferta. Diz o tamanho do salto — de 1
+    # para 100 e noticia, de 2 para 3 nao e.
+    pontuacao_anterior: Decimal | None = None
+    # Selo "Promocao" no card: campanha ativa, portanto temporaria. Eixo
+    # diferente da nota, que mede se a oferta e boa.
+    em_promocao: bool = False
     # Periodo da campanha, extraido do regulamento na pagina de detalhe.
     data_inicio: date | None = None
     data_fim: date | None = None
@@ -204,6 +210,7 @@ def _parsear_card(texto: str, href: str, html: str = "") -> PromocaoBruta | None
 
     m_eram = PADRAO_ERAM.search(texto)
     eram = m_eram.group(1) if m_eram else None
+    pontuacao_anterior = Decimal(eram) if eram else None
     descricao = (
         f"Coletado do site oficial da Livelo. Base de comparacao anterior (Eram): {eram} pontos."
         if eram else "Coletado do site oficial da Livelo."
@@ -225,6 +232,8 @@ def _parsear_card(texto: str, href: str, html: str = "") -> PromocaoBruta | None
         pontuacao_clube=pontuacao_clube,
         codigo_externo=_extrair_codigo_da_url(href),
         nome_exibicao=_extrair_nome_exibicao(html) if html else None,
+        pontuacao_anterior=pontuacao_anterior,
+        em_promocao="Promoção" in texto,
         # So os cards com selo "Promocao" tem campanha ativa — 40 dos 248 em
         # 14/08/2026. Visitar so esses mantem a coleta leve (~2 min em vez de
         # ~12) e cobre exatamente onde mora o regulamento.
@@ -376,6 +385,8 @@ async def enviar_para_api(promocoes: list[PromocaoBruta]) -> None:
                 "pontuacao_clube": str(p.pontuacao_clube) if p.pontuacao_clube is not None else None,
                 "codigo_externo": p.codigo_externo,
                 "nome_exibicao": p.nome_exibicao,
+                "pontuacao_anterior": str(p.pontuacao_anterior) if p.pontuacao_anterior is not None else None,
+                "em_promocao": p.em_promocao,
                 "data_inicio": p.data_inicio.isoformat() if p.data_inicio else None,
                 "data_fim": p.data_fim.isoformat() if p.data_fim else None,
                 "origem_detalhe": "COLETOR_NATIVO_LIVELO",

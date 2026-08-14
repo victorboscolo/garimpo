@@ -40,6 +40,8 @@ class PromocaoBrutaIn:
     pontuacao_clube: Decimal | None = None
     codigo_externo: str | None = None
     nome_exibicao: str | None = None
+    pontuacao_anterior: Decimal | None = None
+    em_promocao: bool = False
     data_inicio: datetime | None = None
     data_fim: datetime | None = None
 
@@ -99,6 +101,12 @@ def _completar_dados_da_campanha(existente: Promocao, bruta: PromocaoBrutaIn) ->
         mudou = True
     if bruta.data_fim and existente.data_fim is None:
         existente.data_fim = bruta.data_fim
+        mudou = True
+    if bruta.pontuacao_anterior is not None and existente.pontuacao_anterior is None:
+        existente.pontuacao_anterior = bruta.pontuacao_anterior
+        mudou = True
+    if bruta.em_promocao and not existente.em_promocao:
+        existente.em_promocao = True
         mudou = True
 
     return mudou
@@ -205,6 +213,8 @@ async def ingerir_promocao_bruta(
         unidade_pontuacao=bruta.unidade_pontuacao,
         pontuacao_e_teto=bruta.pontuacao_e_teto,
         pontuacao_clube=bruta.pontuacao_clube,
+        pontuacao_anterior=bruta.pontuacao_anterior,
+        em_promocao=bruta.em_promocao,
         data_inicio=bruta.data_inicio,
         data_fim=bruta.data_fim,
         requer_clube=bruta.requer_clube,

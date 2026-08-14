@@ -236,3 +236,33 @@ def test_alt_sem_prefixo_e_mantido_como_esta():
 def test_card_sem_alt_nao_inventa_nome():
     assert _extrair_nome_exibicao('<div><img src="x.png"></div>') is None
     assert _extrair_nome_exibicao('<div><img alt=""></div>') is None
+
+
+def test_pontuacao_anterior_capturada_do_eram():
+    """'Eram 1 ponto' diz de onde a oferta saiu. É o tamanho do salto que faz
+    a notícia: de 1 para 100 é relevante, de 2 para 3 não é.
+    """
+    card = _parsear_card(
+        "Promoção\nAté 100 pontos por R$ 1\nEram 1 ponto\nIr para regras do parceiro",
+        "/juntar-pontos/parceiros/liga-vitoria/LVC",
+    )
+    assert card.pontuacao == Decimal("100")
+    assert card.pontuacao_anterior == Decimal("1")
+
+
+def test_sem_eram_nao_ha_pontuacao_anterior():
+    card = _parsear_card("2 pontos por R$ 1\nIr para regras do parceiro", "/juntar-pontos/parceiros/lego/LEG")
+    assert card.pontuacao_anterior is None
+
+
+def test_selo_de_promocao_reconhecido():
+    """A tag 'Promoção' no card marca campanha ativa — eixo diferente da nota:
+    diz que a oferta é temporária, não que é boa.
+    """
+    com_tag = _parsear_card(
+        "Promoção\n3 pontos por R$ 1\nEram 2 pontos\nIr para regras do parceiro",
+        "/juntar-pontos/parceiros/magalu/MZL",
+    )
+    sem_tag = _parsear_card("3 pontos por R$ 1\nIr para regras do parceiro", "/juntar-pontos/parceiros/lego/LEG")
+    assert com_tag.em_promocao is True
+    assert sem_tag.em_promocao is False

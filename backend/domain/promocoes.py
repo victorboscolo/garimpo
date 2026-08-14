@@ -48,6 +48,12 @@ class Promocao(Base):
     # existe porque a oferta maior é condicionada a assinatura.
     pontuacao_clube: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
 
+    # "Eram 1 ponto" no card: valor anterior da oferta. Mede o tamanho do salto.
+    pontuacao_anterior: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    # Selo "Promoção" no card: campanha ativa, logo temporária. Eixo diferente
+    # da nota — esta diz se a oferta é boa, o selo diz que ela vai expirar.
+    em_promocao: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
     requer_clube: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     qual_clube: Mapped[str | None] = mapped_column(String(100))
     requer_cupom: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

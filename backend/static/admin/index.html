@@ -185,6 +185,28 @@
 
   .clube-extra { color: var(--boa); font-weight: 600; }
 
+  /* Valor anterior da oferta. Discreto de propósito: contextualiza o número
+     principal sem competir com ele. */
+  .pontuacao-anterior {
+    font-size: 12px;
+    color: var(--stone-700);
+    font-style: italic;
+  }
+
+  /* Selo "Promoção" da própria Livelo. Fica junto das tags de origem e
+     programa, não junto da nota — é metadado da oferta, não avaliação. */
+  .tag-promocao {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: var(--excelente-bg);
+    color: var(--excelente);
+    cursor: help;
+  }
+
   .aviso-condicionada {
     font-size: 12px;
     line-height: 1.45;
@@ -537,6 +559,7 @@ async function carregar() {
           <span class="parceiro-nome">${esc(p.parceiro_nome)}</span>
           <span class="programa-tag">${esc(p.programa_nome)}</span>
           <span class="origem-tag origem-${esc(p.origem)}">${esc(formatOrigem(p))}</span>
+          ${p.em_promocao ? '<span class="tag-promocao" title="A Livelo marca esta oferta como campanha ativa — ela é temporária. Mede coisa diferente da nota: a nota diz se a oferta é boa, este selo diz que ela vai expirar.">Promoção</span>' : ""}
         </div>
         ${renderPontuacao(p)}
         ${renderRegulamento(p)}
@@ -563,6 +586,11 @@ function renderPontuacao(p) {
     ? ` <span class="clube-extra">· ${esc(p.pontuacao_clube)} no Clube</span>`
     : "";
 
+  // O salto é o que faz a notícia: de 1 para 100 é relevante, de 2 para 3 não.
+  const anterior = p.pontuacao_anterior
+    ? ` <span class="pontuacao-anterior">eram ${esc(p.pontuacao_anterior)}</span>`
+    : "";
+
   const aviso = p.pontuacao_e_teto ? `
     <div class="aviso-condicionada">
       Valor máximo anunciado — costuma valer só para marcas ou produtos
@@ -572,7 +600,7 @@ function renderPontuacao(p) {
   return `
     <div class="pontuacao">
       ${p.pontuacao_e_teto ? '<span class="tag-condicionada">⚠ condicionada</span> ' : ""}
-      <b>${esc(p.pontuacao)}</b> ${esc(formatUnidade(p.unidade_pontuacao))}${clube}
+      <b>${esc(p.pontuacao)}</b> ${esc(formatUnidade(p.unidade_pontuacao))}${clube}${anterior}
     </div>
     ${aviso}`;
 }

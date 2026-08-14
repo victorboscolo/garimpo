@@ -203,6 +203,8 @@ async def ingerir_promocao(
         pontuacao_clube=payload.pontuacao_clube,
         codigo_externo=payload.codigo_externo,
         nome_exibicao=payload.nome_exibicao,
+        pontuacao_anterior=payload.pontuacao_anterior,
+        em_promocao=payload.em_promocao,
         data_inicio=payload.data_inicio,
         data_fim=payload.data_fim,
     )
