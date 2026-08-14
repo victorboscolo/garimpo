@@ -147,18 +147,43 @@ async def montar_fila(db, config: dict, tipo: str | None = None) -> list[dict]:
     return fila
 
 
-async def despachar(db, config: dict, tipo: str | None = None, limite: int | None = None) -> dict:
+# O Telegram limita mensagens a um mesmo destino em torno de 20 por minuto.
+# Sem pausa, um lote grande começa a receber recusa por excesso de velocidade no
+# meio do caminho — e o que se perde não é a mensagem, é a confiança de que a
+# fila foi enviada por inteiro.
+PAUSA_ENTRE_ENVIOS_SEGUNDOS = 3.5
+
+
+def estimar_duracao(quantidade: int) -> float:
+    return max(0, quantidade - 1) * PAUSA_ENTRE_ENVIOS_SEGUNDOS
+
+
+async def despachar(
+    db, config: dict, tipo: str | None = None, limite: int | None = None,
+    itens: list[dict] | None = None,
+) -> dict:
     """Envia a fila e registra cada tentativa em `publicacoes`.
+
+    `itens` permite publicar uma seleção específica, no formato
+    [{"promocao_id": ..., "tipo": ...}]. A mensagem **nunca** vem do cliente:
+    a seleção só filtra a fila, e o texto continua sendo montado aqui a partir
+    do banco. Aceitar texto pronto de fora seria publicar o que o navegador
+    mandasse.
 
     Falha de um item não interrompe o lote: cada envio vira uma linha com
     ENVIADO ou FALHA e o motivo, para que o problema fique visível sem impedir
     o resto de sair.
     """
+    import asyncio
     from datetime import datetime, timezone
     from domain.motor import ENTIDADE_PROMOCAO, Publicacao
     from infrastructure.telegram import cliente
 
     fila = await montar_fila(db, config, tipo)
+
+    if itens is not None:
+        escolhidos = {(str(i["promocao_id"]), i["tipo"]) for i in itens}
+        fila = [f for f in fila if (str(f["promocao_id"]), f["tipo"]) in escolhidos]
     if limite is not None:
         fila = fila[:limite]
 
@@ -172,7 +197,9 @@ async def despachar(db, config: dict, tipo: str | None = None, limite: int | Non
         }
 
     enviadas = falhas = 0
-    for item in fila:
+    for indice, item in enumerate(fila):
+        if indice > 0:
+            await asyncio.sleep(PAUSA_ENTRE_ENVIOS_SEGUNDOS)
         publicacao = Publicacao(
             entidade_tipo=ENTIDADE_PROMOCAO, entidade_id=item["promocao_id"],
             canal="TELEGRAM", tipo=item["tipo"], status="PENDENTE",

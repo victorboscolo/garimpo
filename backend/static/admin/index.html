@@ -517,9 +517,11 @@
 
   <div class="barra-lote oculta" id="barra-lote">
     <span class="contagem" id="contagem-lote"></span>
-    <button class="lote-limpar" onclick="limparSelecao()">Limpar</button>
-    <button class="lote-rejeitar" onclick="rejeitarLote()">Rejeitar selecionadas</button>
-    <button class="lote-aprovar" onclick="aprovarLote()">Aprovar selecionadas</button>
+    <span id="acoes-lote">
+      <button class="lote-limpar" onclick="limparSelecao()">Limpar</button>
+      <button class="lote-rejeitar" onclick="rejeitarLote()">Rejeitar selecionadas</button>
+      <button class="lote-aprovar" onclick="aprovarLote()">Aprovar selecionadas</button>
+    </span>
   </div>
 </main>
 
@@ -587,6 +589,11 @@ async function carregar() {
   contador.textContent = `${promocoes.length} promoç${promocoes.length === 1 ? "ão" : "ões"}, ordenadas pela nota`;
 
   document.getElementById("btn-reprocessar").hidden = false;
+  document.getElementById("acoes-lote").innerHTML = `
+    <button class="lote-limpar" onclick="limparSelecao()">Limpar</button>
+    <button class="lote-rejeitar" onclick="rejeitarLote()">Rejeitar selecionadas</button>
+    <button class="lote-aprovar" onclick="aprovarLote()">Aprovar selecionadas</button>
+  `;
   const pendentes = promocoes.filter(p => p.status === "PENDENTE").length;
   const wrapTudo = document.getElementById("wrap-selecao-tudo");
   wrapTudo.hidden = pendentes === 0;
@@ -630,7 +637,12 @@ async function carregar() {
 
 /* ---- Fila de publicação ---- */
 
+const selecionadasFila = new Set();
+
+function chaveFila(promocaoId, tipo) { return `${promocaoId}|${tipo}`; }
+
 async function carregarFila() {
+  selecionadasFila.clear();
   const lista = document.getElementById("lista");
   const contador = document.getElementById("contador");
   document.getElementById("wrap-selecao-tudo").hidden = true;
@@ -659,15 +671,23 @@ async function carregarFila() {
   barra.className = "status-line";
   barra.innerHTML = `
     <button onclick="testarConfiguracao()">🔌 Testar configuração</button>
-    <button onclick="despachar(2)">▶ Enviar as 2 primeiras</button>
-    <button onclick="despachar(null)">▶ Enviar tudo (${dados.total})</button>
+    <label class="selecao-tudo">
+      <input type="checkbox" onchange="alternarTodasFila(this.checked)">
+      <span>Selecionar todas (${dados.total})</span>
+    </label>
   `;
   lista.appendChild(barra);
 
   for (const item of dados.itens) {
+    const chave = chaveFila(item.promocao_id, item.tipo);
     const card = document.createElement("div");
-    card.className = "card sem-selecao";
+    card.className = "card";
+    card.id = `fila-${chave}`;
     card.innerHTML = `
+      <div class="card-sel">
+        <input type="checkbox" data-chave="${esc(chave)}"
+               onchange="alternarUmaFila('${esc(chave)}', this.checked)">
+      </div>
       <div class="card-main">
         <div class="card-top">
           <span class="parceiro-nome">${esc(item.parceiro)}</span>
@@ -679,6 +699,67 @@ async function carregarFila() {
     `;
     lista.appendChild(card);
   }
+  atualizarBarraFila();
+}
+
+function alternarUmaFila(chave, marcada) {
+  if (marcada) selecionadasFila.add(chave); else selecionadasFila.delete(chave);
+  const card = document.getElementById(`fila-${chave}`);
+  if (card) card.classList.toggle("selecionado", marcada);
+  atualizarBarraFila();
+}
+
+function alternarTodasFila(marcada) {
+  document.querySelectorAll(".card-sel input[data-chave]").forEach(cb => {
+    cb.checked = marcada;
+    alternarUmaFila(cb.dataset.chave, marcada);
+  });
+}
+
+function limparSelecaoFila() {
+  document.querySelectorAll(".card-sel input[data-chave]").forEach(cb => cb.checked = false);
+  alternarTodasFila(false);
+}
+
+function atualizarBarraFila() {
+  const barra = document.getElementById("barra-lote");
+  const n = selecionadasFila.size;
+  barra.classList.toggle("oculta", n === 0);
+  // O Telegram limita o ritmo de mensagens a um mesmo canal: avisar o tempo
+  // evita a impressão de travamento quando a leva é grande.
+  const minutos = Math.ceil((n - 1) * 3.5 / 60);
+  const tempo = n > 1 ? ` · ~${minutos} min` : "";
+  document.getElementById("contagem-lote").textContent =
+    `${n} mensage${n === 1 ? "m" : "ns"} selecionada${n === 1 ? "" : "s"}${tempo}`;
+  document.getElementById("acoes-lote").innerHTML = `
+    <button class="lote-limpar" onclick="limparSelecaoFila()">Limpar</button>
+    <button class="lote-aprovar" onclick="publicarSelecionadas()">Publicar selecionadas</button>
+  `;
+}
+
+async function publicarSelecionadas() {
+  const itens = [...selecionadasFila].map(c => {
+    const [promocao_id, tipo] = c.split("|");
+    return { promocao_id, tipo };
+  });
+  if (itens.length === 0) return;
+
+  const minutos = Math.ceil((itens.length - 1) * 3.5 / 60);
+  const aviso = itens.length > 1 ? `\n\nVai levar cerca de ${minutos} minuto(s) — há uma pausa entre os envios para não esbarrar no limite do Telegram.` : "";
+  if (!confirm(`Publicar ${itens.length} mensagem(ns) no Telegram?${aviso}\n\nNão há como despublicar depois.`)) return;
+
+  const contador = document.getElementById("contador");
+  contador.textContent = `Publicando ${itens.length}…`;
+
+  const r = await (await fetch("/api/v1/publicacoes/despachar", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ itens }),
+  })).json();
+
+  if (r.erro) { alert(`Não foi possível publicar.\n\n${r.erro}`); carregarFila(); return; }
+  alert(`${r.enviadas} enviada(s), ${r.falhas} falha(s), de ${r.total}.`);
+  carregarFila();
 }
 
 async function testarConfiguracao() {

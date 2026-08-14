@@ -5,13 +5,26 @@ dizer "o dado está correto"; publicar é dizer "isto vale o tempo de quem lê".
 Manter as duas juntas transformaria uma revisão de 40 aprovações numa rajada de
 40 mensagens no canal.
 """
+import uuid
+
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from application import publicacao_service
 from infrastructure.db.session import get_db
 
 router = APIRouter()
+
+
+class ItemPublicacaoIn(BaseModel):
+    promocao_id: uuid.UUID
+    tipo: str
+
+
+class DespacharIn(BaseModel):
+    """Seleção a publicar. Sem `itens`, vale a fila inteira (com `limite`)."""
+    itens: list[ItemPublicacaoIn] | None = None
 
 
 @router.get("/fila")
@@ -49,10 +62,14 @@ async def diagnostico(db: AsyncSession = Depends(get_db)):
 
 @router.post("/despachar")
 async def despachar(
-    tipo: str | None = None, limite: int | None = None, db: AsyncSession = Depends(get_db)
+    payload: DespacharIn | None = None,
+    tipo: str | None = None,
+    limite: int | None = None,
+    db: AsyncSession = Depends(get_db),
 ):
     """Envia a fila. `limite` permite começar pequeno — mandar 2 mensagens e
     conferir como chegaram antes de soltar o lote inteiro.
     """
     config = await publicacao_service.carregar_config(db)
-    return await publicacao_service.despachar(db, config, tipo=tipo, limite=limite)
+    itens = [item.model_dump() for item in payload.itens] if payload and payload.itens else None
+    return await publicacao_service.despachar(db, config, tipo=tipo, limite=limite, itens=itens)
