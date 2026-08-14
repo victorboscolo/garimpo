@@ -131,12 +131,18 @@ async def ingerir_promocao_bruta(
     existente = resultado_existente.scalars().first()
     if existente is not None:
         mudou = _completar_dados_da_campanha(existente, bruta)
-        # O parceiro também é complementado no caminho da duplicata: a imensa
+        # O parceiro também é atualizado no caminho da duplicata: a imensa
         # maioria das coletas cai aqui, e sem isto os parceiros já cadastrados
         # nunca receberiam o nome legível — ele só chegaria em parceiro novo.
+        #
+        # O nome é sincronizado com a origem, não apenas preenchido quando
+        # vazio: a Livelo é a fonte da verdade para como o parceiro se chama, e
+        # uma renomeação lá deve chegar aqui. A contrapartida é que renomear à
+        # mão no banco não se sustenta — a coleta seguinte devolve o nome da
+        # origem. Um nome próprio, editável, precisaria de campo separado.
         if bruta.nome_exibicao:
             parceiro_existente = await db.get(Parceiro, existente.parceiro_id)
-            if parceiro_existente is not None and not parceiro_existente.nome_exibicao:
+            if parceiro_existente is not None and parceiro_existente.nome_exibicao != bruta.nome_exibicao:
                 parceiro_existente.nome_exibicao = bruta.nome_exibicao
                 mudou = True
         if mudou:
