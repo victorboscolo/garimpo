@@ -203,6 +203,33 @@ def _parsear_card(texto: str, href: str) -> PromocaoBruta | None:
     )
 
 
+def _aplicar_regulamento(item: PromocaoBruta, regulamento: str) -> None:
+    """Aplica a um item o que o regulamento da campanha declara.
+
+    O regulamento e a fonte autoritativa; o rotulo do card, nao. O card do
+    Olympikus marca a segunda pontuacao como "Clube", mas o regulamento diz que
+    os 15 pontos sao "exclusivo para primeira compra" — condicao diferente.
+    Sem mencao a Clube no texto, o valor nao e afirmado como sendo de Clube.
+
+    Quando nao ha regulamento (oferta sem campanha ativa, cujo detalhe nem e
+    visitado), o card segue sendo a unica fonte e continua valendo.
+    """
+    item.regulamento_texto = regulamento
+    item.data_inicio, item.data_fim = _extrair_validade(regulamento)
+
+    cupom = _extrair_cupom(regulamento)
+    if cupom:
+        item.requer_cupom = True
+        item.cupom = cupom
+
+    if item.pontuacao_clube is not None and "clube" not in regulamento.lower():
+        logger.info(
+            "'%s': card anuncia Clube mas o regulamento nao menciona — descartando pontuacao de clube.",
+            item.parceiro_nome_bruto,
+        )
+        item.pontuacao_clube = None
+
+
 async def enriquecer_com_detalhe(page, item: PromocaoBruta) -> None:
     """Visita a pagina do parceiro e preenche regulamento, validade e cupom.
 
@@ -227,13 +254,7 @@ async def enriquecer_com_detalhe(page, item: PromocaoBruta) -> None:
 
     # Substitui a frase sintetica que o coletor escrevia por si mesmo pelo
     # texto real da campanha — a unica fonte da restricao.
-    item.regulamento_texto = regulamento
-    item.data_inicio, item.data_fim = _extrair_validade(regulamento)
-
-    cupom = _extrair_cupom(regulamento)
-    if cupom:
-        item.requer_cupom = True
-        item.cupom = cupom
+    _aplicar_regulamento(item, regulamento)
 
 
 async def coletar() -> list[PromocaoBruta]:

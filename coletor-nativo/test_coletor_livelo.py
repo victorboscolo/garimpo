@@ -15,6 +15,7 @@ from coletor_livelo_nativo import (
     _extrair_nome_da_url,
     _extrair_regulamento,
     _extrair_validade,
+    _aplicar_regulamento,
     _parsear_card,
 )
 
@@ -167,3 +168,47 @@ def test_validade_de_um_dia_so():
     inicio, fim = _extrair_validade("Campanha válida em 14/08/2026. Ganhe 10 pontos por real.")
     assert (inicio.day, inicio.month, inicio.year) == (14, 8, 2026)
     assert inicio == fim
+
+
+def test_clube_e_descartado_quando_o_regulamento_nao_o_menciona():
+    """O card do Olympikus rotula a segunda pontuação como 'Clube', mas o
+    regulamento diz que os 15 pontos são 'exclusivo para primeira compra' —
+    condição diferente. O regulamento é a fonte autoritativa: sem menção a
+    Clube nele, não afirmamos que a oferta é de Clube.
+    """
+    card = _parsear_card(
+        "Promoção\n5 pontos por R$ 1\nClube\n15 pontos por R$ 1\nIr para regras do parceiro",
+        "/juntar-pontos/parceiros/olympikus/OVC",
+    )
+    assert card.pontuacao_clube == Decimal("15")  # veio do card
+
+    _aplicar_regulamento(card, REG_OLYMPIKUS)
+    assert card.pontuacao_clube is None
+
+
+def test_clube_e_mantido_quando_o_regulamento_confirma():
+    """Beleza na Web: o regulamento diz 'exclusivo para assinantes Clube
+    Livelo', então o valor do card se confirma.
+    """
+    reg = (
+        "Campanha válida de 14 a 16/08/2026. Ganhe 12 pontos por real gasto em produtos "
+        "da marca Calvin Klein exclusivo para assinantes Clube Livelo; 6 pontos por real "
+        "para demais clientes na marca selecionada."
+    )
+    card = _parsear_card(
+        "Promoção\n6 pontos por R$ 1\nClube\n12 pontos por R$ 1\nIr para regras do parceiro",
+        "/juntar-pontos/parceiros/beleza-na-web/BLZ",
+    )
+    _aplicar_regulamento(card, reg)
+    assert card.pontuacao_clube == Decimal("12")
+
+
+def test_sem_regulamento_o_valor_do_card_permanece():
+    """Ofertas sem campanha ativa não têm regulamento buscado. Aí o card é a
+    única fonte que temos e continua valendo.
+    """
+    card = _parsear_card(
+        "Promoção\n2 pontos por R$ 1\nClube\n3 pontos por R$ 1\nIr para regras do parceiro",
+        "/juntar-pontos/parceiros/hope/HPE",
+    )
+    assert card.pontuacao_clube == Decimal("3")
