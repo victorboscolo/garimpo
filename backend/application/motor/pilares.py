@@ -67,6 +67,14 @@ def pilar_amplitude(promocao: Promocao, quantidade_categorias: int) -> float:
     """
     nota = 50.0
 
+    # O valor anunciado não vale para a compra inteira — a Renner anuncia 10
+    # pontos que só valem na categoria Básicos, e o resto do catálogo rende 2.
+    # É redução de alcance, e é aqui que deve doer: a Confiabilidade mede se o
+    # dado está completo e a Facilidade mede barreiras para aproveitar, que são
+    # outras coisas.
+    if getattr(promocao, "valor_condicionado", False):
+        nota -= 25
+
     if promocao.marketplace_status == "PERMITIDO":
         nota += 20
     elif promocao.marketplace_status == "PROIBIDO":
