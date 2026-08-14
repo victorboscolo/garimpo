@@ -1,7 +1,7 @@
 # Handoff para Claude Code
 
 > Revisado em 14/08/2026, ao fim de uma sessão que alterou substancialmente o
-> sistema. Os números aqui foram conferidos contra o banco no momento da
+> sistema, e atualizado depois do coletor v3 e da comparação por segmento. Os números aqui foram conferidos contra o banco no momento da
 > escrita, não reconstruídos de memória. A seção 12 lista as afirmações do
 > handoff anterior que se provaram falsas — vale ler antes de confiar em
 > qualquer documento mais antigo.
@@ -20,12 +20,13 @@ atual, mas cuja arquitetura já foi antecipada nas tabelas polimórficas
 **Estágio atual**: MVP funcional de ponta a ponta rodando localmente no Mac do
 usuário. Coleta real diária, motor calibrado com dados reais, banco, API e
 painel de revisão estão implementados e em uso. O repositório tem controle de
-versão (16 commits) e 51 testes automatizados.
+versão (19 commits) e 70 testes automatizados.
 
 **O que mudou na sessão de 14/08**: o motor deixou de dar a mesma nota para
-todas as ofertas; o painel virou ferramenta de triagem real; e o coletor passou
-a aproveitar cinco dados que já baixava e descartava, além de buscar o
-regulamento das campanhas na página de detalhe do parceiro.
+todas as ofertas e passou a declarar contra o que comparou cada uma; o painel
+virou ferramenta de triagem real; e o coletor descobriu que a listagem embute um
+JSON estruturado com tudo tipado, o que o reduziu de ~3 minutos e ~50
+navegações para **7 segundos e uma requisição**.
 
 ## 2. Escopo atual e limites
 
@@ -56,15 +57,15 @@ regulamento das campanhas na página de detalhe do parceiro.
 
 | Componente | Status | Observação |
 |---|---|---|
-| Controle de versão | IMPLEMENTADO | 16 commits; `.gitignore` cobre `.env`, `venv/`, logs, `.pytest_cache` |
-| Modelo de dados | IMPLEMENTADO | 16 tabelas, migrations 0001–0006 aplicadas |
-| Motor de Análise V1 | IMPLEMENTADO | 6 pilares; 5 dos 6 já diferenciam ofertas |
-| Coletor Livelo nativo (macOS) | IMPLEMENTADO | listagem + página de regras das campanhas; 29 testes |
+| Controle de versão | IMPLEMENTADO | 19 commits; `.gitignore` cobre `.env`, `venv/`, logs, `.pytest_cache` |
+| Modelo de dados | IMPLEMENTADO | 18 tabelas, migrations 0001–0007 aplicadas |
+| Motor de Análise V1 | IMPLEMENTADO | 6 pilares; base de comparação em cascata (família → segmento → mercado) |
+| Coletor Livelo nativo (macOS) | IMPLEMENTADO | lê o JSON estruturado da listagem; parsing de texto como fallback; 41 testes |
 | Coletor Livelo em Docker | ABANDONADO | bloqueado por anti-robô (HTTP 403); não usar |
 | Agendamento (`launchd`) | IMPLEMENTADO | diário às 10:05; só roda com o Mac ligado e logado |
 | API (FastAPI) | IMPLEMENTADO | listagem ordenada, aprovação/rejeição individual e em lote, ingestão, reclassificação |
 | Painel admin | IMPLEMENTADO | triagem por nota, ações em lote, critérios do motor, regulamento e selos |
-| Testes automatizados | PARCIAL | 22 backend + 29 coletor, todos de lógica pura; nada de API/banco |
+| Testes automatizados | PARCIAL | 29 backend + 41 coletor, todos de lógica pura; nada de API/banco |
 | Publicação (Telegram) | PLANEJADO | tabela `publicacoes` existe, integração não |
 | Autenticação | PENDENTE | ver seção 8 |
 | Coletor Esfera | PENDENTE | nenhum código |
@@ -73,35 +74,43 @@ regulamento das campanhas na página de detalhe do parceiro.
 
 | | |
 |---|---|
-| Promoções | 312 — 275 aprovadas, 35 pendentes, 2 rejeitadas |
-| Parceiros | 249, dos quais 248 com nome de exibição |
-| Com regulamento da campanha | 49 |
-| Com validade / cupom | 48 / 23 |
-| Marcadas como condicionadas | 80 |
+| Promoções | 339 — 275 aprovadas, 62 pendentes, 2 rejeitadas |
+| Parceiros | 255, praticamente todos com nome de exibição |
+| Categorias de origem / vínculos | 37 / 500 |
+| Com pontuação base (`parityBau`) | 253 |
+| Com alcance no marketplace resolvido | 241 |
+| Com cupom / validade | 44 / 60 |
 
-**Distribuição das notas:** Pouco atrativa 4, Comum 197, Boa 62, Excelente 39,
-Excepcional 10. Antes desta sessão, **todas as notas eram 60,00**.
+**Distribuição das notas:** Pouco atrativa 4, Comum 166, Boa 105, Excelente 51,
+Excepcional 13. Antes desta sessão, **todas as notas eram 60,00**.
 
-**Limitação viva:** `confianca_historica` é BAIXA nas 312. O motor compara
-dentro da família (parceiro + programa) e exige 3 campanhas na janela; como o
-coletor traz ~15 ofertas novas por dia distribuídas entre 249 parceiros,
-nenhuma família acumulou histórico ainda. Isso melhora com dias de coleta, não
-com código.
+**Base de comparação:** 196 classificações usam segmento (confiança MEDIA) e
+143 caem no mercado (BAIXA). A justificativa de cada classificação diz
+explicitamente contra o que a oferta foi comparada.
+
+**Limitação viva:** só 26 dos 255 parceiros têm mais de uma oferta aprovada, e
+por isso quase nenhuma classificação alcança confiança ALTA (histórico próprio
+com 3+ campanhas). Como o coletor traz ~15 ofertas novas por dia distribuídas
+entre 255 parceiros, cada um muda a oferta a cada duas ou três semanas — o
+histórico próprio amadurece em meses. A cascata por segmento existe justamente
+para o motor não ficar refém disso.
 
 ## 4. Arquitetura e fluxo de dados
 
 ```
 Coletor nativo (macOS, fora do Docker, Chromium visível)
-    → lê a listagem: pontuação, "Até", Clube, "Eram X", código da variante,
-      nome no alt da logo, selo "Promoção"
-    → para os cards com selo "Promoção" (~50 de 248), visita a página de
-      regras e extrai regulamento, validade e cupom
+    → UMA requisição à listagem, e lê o JSON que a página embute:
+      pontuação, parityBau (base), parityClub, separatorSlug ("Até"),
+      promotion, datas com fuso, legalTerms (regulamento), nome e categorias
+    → fallback: se o JSON não for encontrado, avisa e volta ao parsing do
+      texto renderizado, que continua implementado
     → POST http://localhost:8000/api/v1/promocoes/ingerir
         ↓
 Backend FastAPI (Docker)
     → application/ingestao_service.py:
         - calcula hash de dedup (ver aviso na seção 5)
         - resolve/cria Parceiro por (nome + código da variante)
+        - sincroniza as categorias do parceiro (categorias_origem, N:N)
         - deriva valor_condicionado e marketplace_status (application/condicoes.py)
         - cria `promocoes` (status=PENDENTE) e aciona o motor
         - se for duplicata, complementa dados de campanha faltantes
@@ -119,7 +128,15 @@ com janela visível (`headless=False`) passa. Testado e comprovado.
 **Motor de Análise V1** (`backend/application/motor/`): Histórico 25%,
 Atratividade 25%, Amplitude 20%, Facilidade 10%, Exclusividade 10%,
 Confiabilidade dos dados 10% — pesos e faixas configuráveis via `configuracoes`,
-sem deploy. Distinção a preservar: `confianca_historica` (ALTA/MEDIA/BAIXA, por
+sem deploy.
+
+**Base de comparação em cascata** (`motor/historico.py`, `motor/segmento.py`):
+o pilar Histórico tenta, nessa ordem, o histórico do próprio parceiro, depois o
+segmento, depois o mercado. No segmento vale a categoria mais específica com
+amostra suficiente, e o desempate entre iguais é alfabético de propósito — sem
+critério estável a nota mudaria sozinha de um dia para o outro. A Exclusividade
+**não** usa a cascata: "é o maior que este parceiro já ofereceu" é afirmação
+sobre o parceiro, e trocá-la por "o maior do segmento" diria outra coisa. Distinção a preservar: `confianca_historica` (ALTA/MEDIA/BAIXA, por
 volume de histórico aprovado) é **diferente** de `confiabilidade_dados` (0-100,
 completude dos dados da campanha).
 
@@ -144,6 +161,29 @@ Reforçada três vezes pelo usuário na sessão, em contextos diferentes:
 Corolário aplicado no código: quando o dado não é observável, o campo fica
 **nulo**, nunca preenchido por dedução. É por isso que `marketplace_status` fica
 nulo nas ofertas cujo regulamento nunca foi lido, em vez de "PERMITIDO".
+
+### A listagem embute um JSON estruturado
+
+Descoberto em 14/08/2026 e hoje é o caminho principal do coletor
+(`coletor-nativo/parceiros_json.py`). A página traz um objeto por parceiro com
+os dados já tipados, o que dispensou tanto o regex sobre texto renderizado
+quanto a visita a ~50 páginas de regras por coleta.
+
+Dois campos só existem ali: `parityBau`, a pontuação fora de campanha — a Liga
+Vitória Consórcio anuncia "até 100" e volta a 1 —, e `categories`, a
+classificação do parceiro.
+
+Duas armadilhas encontradas ao integrar, ambas ligadas ao hash:
+
+- `parityClub` vem preenchido nos 253 parceiros, quase sempre igual à pontuação
+  normal. Como o campo entra no hash, gravá-lo em todos teria mudado o hash da
+  base inteira. Só é registrado quando é **maior** que a pontuação normal — 20
+  casos, não 253.
+- `parceiro_nome_bruto` continua vindo do slug da URL, e **não** do `name` do
+  JSON, pelo mesmo motivo: participa da identidade e do hash.
+
+É estrutura interna do site e pode mudar sem aviso, por isso o parsing de texto
+segue implementado como fallback.
 
 ### ⚠️ O hash de deduplicação
 
@@ -201,9 +241,10 @@ sem login) e as páginas de regras dos parceiros com campanha ativa.
   usuário humano faria ao abrir a página.
 - Segredos ficam em `.env` (não versionado). `.env.example` tem só placeholders.
 
-**Limitação de dados conhecida:** as 263 ofertas **sem** selo "Promoção" não têm
-a página de regras visitada. Se houver restrição numa taxa estável, ela segue
-invisível. Buscar todas custaria ~12 minutos diários em vez de ~3.
+**Coleta hoje:** uma única requisição, ~7 segundos. O JSON da listagem traz o
+regulamento de praticamente todos os parceiros, inclusive dos que não têm
+campanha ativa — o que revelou exigências de cupom antes invisíveis (Havaianas,
+Época Cosméticos). A visita a páginas de detalhe deixou de ser necessária.
 
 ## 7. Convenções de desenvolvimento
 
@@ -214,16 +255,18 @@ vanilla; Docker Compose.
 ```
 backend/
   api/v1/          # rotas e schemas
-  application/     # ingestao_service.py, condicoes.py, motor/, configuracoes_service.py
+  application/     # ingestao_service.py, condicoes.py, motor/ (pilares,
+                   #   historico, segmento, servico), configuracoes_service.py
   domain/          # modelos SQLAlchemy
   infrastructure/  # conexão com o banco
-  migrations/      # Alembic (0001–0006)
+  migrations/      # Alembic (0001–0007)
   scripts_backfill/# backfills pontuais, com dry-run
   static/admin/    # painel
-  tests/           # 22 testes de lógica pura
+  tests/           # 29 testes de lógica pura
 coletor-nativo/    # roda fora do Docker, venv próprio
-  coletor_livelo_nativo.py
-  test_coletor_livelo.py   # 29 testes
+  coletor_livelo_nativo.py # orquestra a coleta; fallback de texto
+  parceiros_json.py        # lê o JSON estruturado da página (caminho principal)
+  test_coletor_livelo.py + test_parceiros_json.py   # 41 testes
 docs/GAR-1100/     # arquitetura (Cap. 3 a 8)
 docs/ai/           # este handoff
 ```
@@ -255,8 +298,8 @@ defasada ele some do container. `docker compose build backend` resolve.
 |---|---|---|---|
 | Sem autenticação | Segurança | Médio | Portas já restritas a `127.0.0.1`, o que fecha o acesso pela rede. Uma chave de API no `/ingerir` seria o próximo passo; JWT completo é desproporcional hoje |
 | `aprovada_por` nulo nas 275 | Auditoria | Baixo hoje | Depende de haver usuários; importa quando houver mais de um revisor |
-| `confianca_historica` BAIXA em tudo | Limitação temporária | Alto para a qualidade do motor | Acumular dias de coleta; não há atalho |
-| 263 ofertas sem regulamento | Lacuna de dados | Médio | Decidir se vale visitar o detalhe de todas |
+| Poucos parceiros com histórico próprio | Limitação temporária | Médio | 26 de 255; a cascata por segmento cobre o resto enquanto amadurece |
+| Agrupamento canônico vazio | Curadoria | Baixo | `categorias_origem.categoria_id` nulo nos 37 slugs; preencher reduz os agrupadores sem recoletar |
 | Coletor depende do Mac ligado | Operacional | Médio | Coleta diária pode falhar em silêncio; não há monitoramento |
 | Sem teste de API/banco | Qualidade | Médio | Três bugs desta sessão (MissingGreenlet, MultipleResultsFound, fuso na validade) só apareceram em execução real |
 | Categorias de parceiro vazias | Lacuna | Médio | 8 categorias cadastradas, 0 dos 249 parceiros classificado. Impede comparação por segmento |
@@ -275,10 +318,10 @@ carregamento:
 
 Não precisa de endpoint novo nem migration — é trabalho só de tela.
 
-### Tarefa B — Categorizar parceiros
-Habilita comparação por segmento, que o usuário pediu ("clientes do mesmo
-segmento"). Hoje o motor compara com o programa inteiro. Exige classificar 249
-parceiros — decidir se manual ou heurístico.
+### Tarefa B — Publicação no Telegram
+É o objetivo do produto e não existe nada além da tabela `publicacoes`. O
+usuário quer publicar para obter crítica externa ao processo, não só para
+divulgar ofertas. Toda publicação continua exigindo aprovação humana prévia.
 
 ### Tarefa C — Teste de API e banco
 As três falhas mais caras desta sessão passaram por toda a suíte de lógica pura
