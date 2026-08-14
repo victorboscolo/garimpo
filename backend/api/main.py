@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from api.v1 import classificacoes, promocoes
+from api.v1 import classificacoes, promocoes, publicacoes
 
 app = FastAPI(
     title="Garimpo Promoções — API",
@@ -11,6 +11,7 @@ app = FastAPI(
 
 app.include_router(promocoes.router, prefix="/api/v1/promocoes", tags=["promocoes"])
 app.include_router(classificacoes.router, prefix="/api/v1/promocoes", tags=["classificacoes"])
+app.include_router(publicacoes.router, prefix="/api/v1/publicacoes", tags=["publicacoes"])
 
 # Painel visual simples de revisão — http://localhost:8000/admin/
 app.mount("/admin", StaticFiles(directory="static/admin", html=True), name="admin")

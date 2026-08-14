@@ -295,6 +295,41 @@
 
   .empty-state .big { font-size: 40px; margin-bottom: 8px; }
 
+  /* Prévia da mensagem como ela vai chegar no Telegram. Monoespaçada de
+     propósito: é para conferir o texto, não para parecer bonito. */
+  .previa {
+    background: var(--stone-900);
+    color: var(--stone-50);
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    max-width: 62ch;
+  }
+
+  .canal-tag {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: var(--boa-bg);
+    color: var(--boa);
+  }
+
+  .aviso-config {
+    background: var(--pouco-bg);
+    color: var(--pouco);
+    border-left: 3px solid var(--pouco);
+    padding: 10px 14px;
+    border-radius: 0 8px 8px 0;
+    font-size: 13px;
+    line-height: 1.5;
+    margin-bottom: 16px;
+  }
+
   a.link-origem {
     font-size: 12px;
     color: var(--boa);
@@ -323,6 +358,11 @@
     user-select: none;
   }
   .selecao-tudo input { width: 15px; height: 15px; cursor: pointer; accent-color: var(--stone-900); }
+
+  /* O atributo `hidden` aplica display:none pela folha do navegador, que perde
+     para o `display: flex` acima. Sem esta regra, esconder o seletor não
+     funciona. */
+  .selecao-tudo[hidden] { display: none; }
 
   .barra-lote {
     position: sticky;
@@ -459,6 +499,7 @@
     <div class="tab" data-filtro="APROVADA">Aprovadas</div>
     <div class="tab" data-filtro="REJEITADA">Rejeitadas</div>
     <div class="tab" data-filtro="">Todas</div>
+    <div class="tab" data-filtro="__PUBLICAR__">Publicar</div>
   </div>
 </header>
 
@@ -470,7 +511,7 @@
       <span id="label-selecao-tudo">Selecionar todas</span>
     </label>
     <button onclick="carregar()">↻ Atualizar</button>
-    <button onclick="reprocessarTodas()">⚙ Reprocessar tudo</button>
+    <button id="btn-reprocessar" onclick="reprocessarTodas()">⚙ Reprocessar tudo</button>
   </div>
   <div id="lista"></div>
 
@@ -515,6 +556,7 @@ function esc(valor) {
 }
 
 async function carregar() {
+  if (filtroAtual === "__PUBLICAR__") return carregarFila();
   const lista = document.getElementById("lista");
   const contador = document.getElementById("contador");
   lista.innerHTML = "";
@@ -544,6 +586,7 @@ async function carregar() {
 
   contador.textContent = `${promocoes.length} promoç${promocoes.length === 1 ? "ão" : "ões"}, ordenadas pela nota`;
 
+  document.getElementById("btn-reprocessar").hidden = false;
   const pendentes = promocoes.filter(p => p.status === "PENDENTE").length;
   const wrapTudo = document.getElementById("wrap-selecao-tudo");
   wrapTudo.hidden = pendentes === 0;
@@ -583,6 +626,73 @@ async function carregar() {
     `;
     lista.appendChild(card);
   }
+}
+
+/* ---- Fila de publicação ---- */
+
+async function carregarFila() {
+  const lista = document.getElementById("lista");
+  const contador = document.getElementById("contador");
+  document.getElementById("wrap-selecao-tudo").hidden = true;
+  document.getElementById("barra-lote").classList.add("oculta");
+  lista.innerHTML = "";
+  contador.textContent = "Carregando fila…";
+
+  let dados;
+  try {
+    dados = await (await fetch("/api/v1/publicacoes/fila")).json();
+  } catch (e) {
+    contador.textContent = "Erro ao carregar a fila.";
+    return;
+  }
+
+  contador.textContent = `${dados.total} mensagem(ns) na fila · modo ${dados.modo}`;
+  document.getElementById("btn-reprocessar").hidden = true;
+
+  if (dados.total === 0) {
+    lista.innerHTML = `<div class="empty-state"><div class="big">✅</div>Nada na fila. Aprove promoções para que apareçam aqui.</div>`;
+    return;
+  }
+
+  // Não existe despublicar no Telegram: a conferência tem que caber antes.
+  const barra = document.createElement("div");
+  barra.className = "status-line";
+  barra.innerHTML = `
+    <button onclick="despachar(2)">▶ Enviar as 2 primeiras</button>
+    <button onclick="despachar(null)">▶ Enviar tudo (${dados.total})</button>
+  `;
+  lista.appendChild(barra);
+
+  for (const item of dados.itens) {
+    const card = document.createElement("div");
+    card.className = "card sem-selecao";
+    card.innerHTML = `
+      <div class="card-main">
+        <div class="card-top">
+          <span class="parceiro-nome">${esc(item.parceiro)}</span>
+          <span class="canal-tag">${esc(item.tipo)}</span>
+        </div>
+        <div class="previa">${esc(item.mensagem)}</div>
+      </div>
+      <div class="actions"></div>
+    `;
+    lista.appendChild(card);
+  }
+}
+
+async function despachar(limite) {
+  const quantos = limite === null ? "TODAS as mensagens da fila" : `as ${limite} primeiras`;
+  if (!confirm(`Publicar ${quantos} no Telegram?\n\nNão há como despublicar depois.`)) return;
+
+  const url = "/api/v1/publicacoes/despachar" + (limite === null ? "" : `?limite=${limite}`);
+  const r = await (await fetch(url, { method: "POST" })).json();
+
+  if (r.erro) {
+    alert(`Não foi possível publicar.\n\n${r.erro}`);
+    return;
+  }
+  alert(`${r.enviadas} enviada(s), ${r.falhas} falha(s), de ${r.total}.`);
+  carregarFila();
 }
 
 function renderPontuacao(p) {

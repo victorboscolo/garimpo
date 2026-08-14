@@ -74,3 +74,111 @@ def modo_efetivo(config: dict) -> str:
         )
         return "MANUAL"
     return "MANUAL"
+
+
+async def carregar_config(db) -> dict:
+    """Configuração de publicação, com a hierarquia GLOBAL → DOMÍNIO → PROGRAMA
+    → PARCEIRO usada pelos pesos e faixas do motor.
+    """
+    from application.configuracoes_service import resolver_configuracao
+    return await resolver_configuracao(db, "publicacao") or CONFIG_PADRAO
+
+
+async def montar_fila(db, config: dict, tipo: str | None = None) -> list[dict]:
+    """O que está aprovado, atinge o limiar do canal e ainda não foi enviado.
+
+    A fila é derivada, não materializada: nada é pré-criado em `publicacoes`.
+    Assim ela nunca fica desatualizada em relação a uma reclassificação, a uma
+    mudança de limiar ou a uma rejeição posterior — e não sobra lixo de itens
+    enfileirados que nunca saíram.
+    """
+    from sqlalchemy import and_, select
+    from application.telegram.mensagens import montar_mensagem
+    from domain.motor import ENTIDADE_PROMOCAO, Classificacao, Publicacao
+    from domain.promocoes import Promocao
+
+    canais = list((config.get("canais") or {}).keys())
+    if tipo:
+        canais = [c for c in canais if c == tipo]
+
+    stmt = (
+        select(Promocao, Classificacao)
+        .join(Classificacao, and_(
+            Classificacao.entidade_id == Promocao.id,
+            Classificacao.entidade_tipo == ENTIDADE_PROMOCAO,
+            Classificacao.ativa.is_(True),
+        ))
+        .filter(Promocao.status == "APROVADA")
+        .order_by(Classificacao.nota.desc())
+    )
+    aprovadas = (await db.execute(stmt)).unique().all()
+
+    enviadas = {
+        (p.entidade_id, p.tipo)
+        for p in (await db.execute(
+            select(Publicacao).filter_by(entidade_tipo=ENTIDADE_PROMOCAO, status="ENVIADO")
+        )).scalars().all()
+    }
+
+    fila = []
+    for promocao, classificacao in aprovadas:
+        for canal in canais:
+            if (promocao.id, canal) in enviadas:
+                continue
+            if not deve_publicar(classificacao, canal, config):
+                continue
+            fila.append({
+                "promocao_id": promocao.id,
+                "tipo": canal,
+                "parceiro": promocao.parceiro_nome,
+                "categoria": classificacao.categoria,
+                "mensagem": montar_mensagem(promocao, classificacao, canal),
+            })
+    return fila
+
+
+async def despachar(db, config: dict, tipo: str | None = None, limite: int | None = None) -> dict:
+    """Envia a fila e registra cada tentativa em `publicacoes`.
+
+    Falha de um item não interrompe o lote: cada envio vira uma linha com
+    ENVIADO ou FALHA e o motivo, para que o problema fique visível sem impedir
+    o resto de sair.
+    """
+    from datetime import datetime, timezone
+    from domain.motor import ENTIDADE_PROMOCAO, Publicacao
+    from infrastructure.telegram import cliente
+
+    fila = await montar_fila(db, config, tipo)
+    if limite is not None:
+        fila = fila[:limite]
+
+    # Recusa antes de começar, em vez de falhar no meio com metade enviada.
+    canais_pedidos = {item["tipo"] for item in fila}
+    nao_configurados = [c for c in canais_pedidos if not cliente.esta_configurado(c)]
+    if nao_configurados:
+        return {
+            "enviadas": 0, "falhas": 0, "total": len(fila),
+            "erro": " ".join(cliente.motivo_nao_configurado(c) for c in nao_configurados),
+        }
+
+    enviadas = falhas = 0
+    for item in fila:
+        publicacao = Publicacao(
+            entidade_tipo=ENTIDADE_PROMOCAO, entidade_id=item["promocao_id"],
+            canal="TELEGRAM", tipo=item["tipo"], status="PENDENTE",
+        )
+        db.add(publicacao)
+        await db.flush()
+        try:
+            await cliente.enviar(item["tipo"], item["mensagem"])
+            publicacao.status = "ENVIADO"
+            publicacao.data_envio = datetime.now(timezone.utc)
+            enviadas += 1
+        except Exception as erro:
+            publicacao.status = "FALHA"
+            publicacao.erro_resumido = str(erro)[:500]
+            falhas += 1
+            logger.warning("Falha ao publicar %s em %s: %s", item["promocao_id"], item["tipo"], erro)
+
+    await db.commit()
+    return {"enviadas": enviadas, "falhas": falhas, "total": len(fila), "erro": None}
