@@ -202,6 +202,7 @@ async def ingerir_promocao(
         pontuacao_e_teto=payload.pontuacao_e_teto,
         pontuacao_clube=payload.pontuacao_clube,
         codigo_externo=payload.codigo_externo,
+        nome_exibicao=payload.nome_exibicao,
         data_inicio=payload.data_inicio,
         data_fim=payload.data_fim,
     )

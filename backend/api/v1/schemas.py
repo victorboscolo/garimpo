@@ -117,6 +117,7 @@ class PromocaoIngerirIn(BaseModel):
     pontuacao_e_teto: bool = False
     pontuacao_clube: Decimal | None = None
     codigo_externo: str | None = None
+    nome_exibicao: str | None = None
     data_inicio: datetime | None = None
     data_fim: datetime | None = None
     origem_detalhe: str

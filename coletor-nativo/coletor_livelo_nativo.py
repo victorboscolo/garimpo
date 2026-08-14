@@ -59,6 +59,10 @@ PADRAO_VALIDADE_DIA_UNICO = re.compile(r"v[áa]lida\s+em\s+(\d{1,2})/(\d{1,2})/(
 # "Utilize o cupom LIVELO." — sem o cupom o cliente nao pontua.
 PADRAO_CUPOM = re.compile(r"cupom\s+([A-Z0-9]{3,})")
 
+# alt da logo: 'Logo Liga Vitória Consórcio'. Unica fonte do subtitulo da
+# variante — ele nao existe no texto visivel do card.
+PADRAO_ALT = re.compile(r'alt="([^"]*)"')
+
 
 @dataclass
 class PromocaoBruta:
@@ -82,6 +86,9 @@ class PromocaoBruta:
     # Codigo da variante na URL. Um mesmo slug pode ter ofertas diferentes:
     # beach-park/BPK sao os Hoteis e beach-park/BHP os Ingressos.
     codigo_externo: str | None = None
+    # Nome legivel vindo do alt da logo ("Liga Vitoria Consorcio"). So para
+    # exibicao — a identidade do parceiro continua sendo nome+codigo da URL.
+    nome_exibicao: str | None = None
     # Periodo da campanha, extraido do regulamento na pagina de detalhe.
     data_inicio: date | None = None
     data_fim: date | None = None
@@ -113,6 +120,27 @@ def _extrair_codigo_da_url(href: str) -> str | None:
     # A Livelo serve alguns hrefs com espaco no fim ('/klubi-auto/AUT '):
     # sem limpar, 'AUT ' viraria um parceiro diferente de 'AUT'.
     return partes[-1].strip() or None
+
+
+def _extrair_nome_exibicao(html_card: str) -> str | None:
+    """Nome legivel do parceiro, tirado do alt da logo.
+
+    O subtitulo que distingue as variantes ("Seguro Viagem", "Consorcio",
+    "Ingressos") aparece so na imagem, nunca no texto do card. E a unica fonte
+    que nomeia as 6 variantes da Liga Vitoria e revela que hero/HRH e o seguro
+    viagem. Presente nos 248 cards em 14/08/2026.
+
+    Vai para `nome_exibicao`, nunca para `nome`: este ultimo entra no hash de
+    deduplicacao e na identidade do parceiro, e mudar a fonte dele faria a
+    coleta seguinte nao reconhecer nada.
+    """
+    achado = PADRAO_ALT.search(html_card)
+    if not achado:
+        return None
+    alt = achado.group(1).strip()
+    if alt.lower().startswith("logo "):
+        alt = alt[5:].strip()
+    return alt or None
 
 
 def _extrair_regulamento(texto_pagina: str) -> str | None:
@@ -155,7 +183,7 @@ def _extrair_cupom(regulamento: str) -> str | None:
     return achado.group(1) if achado else None
 
 
-def _parsear_card(texto: str, href: str) -> PromocaoBruta | None:
+def _parsear_card(texto: str, href: str, html: str = "") -> PromocaoBruta | None:
     m_pontos = PADRAO_PONTOS.search(texto)
     if not m_pontos:
         return None
@@ -196,6 +224,7 @@ def _parsear_card(texto: str, href: str) -> PromocaoBruta | None:
         pontuacao_e_teto=e_teto,
         pontuacao_clube=pontuacao_clube,
         codigo_externo=_extrair_codigo_da_url(href),
+        nome_exibicao=_extrair_nome_exibicao(html) if html else None,
         # So os cards com selo "Promocao" tem campanha ativa — 40 dos 248 em
         # 14/08/2026. Visitar so esses mantem a coleta leve (~2 min em vez de
         # ~12) e cobre exatamente onde mora o regulamento.
@@ -289,12 +318,15 @@ async def coletar() -> list[PromocaoBruta]:
             try:
                 href = await link.get_attribute("href")
                 texto = await link.inner_text()
+                # O subtitulo da variante so existe no alt da logo, entao o
+                # HTML do card precisa vir junto do texto visivel.
+                html = await link.inner_html()
             except Exception:
                 continue
             if not href or not texto:
                 continue
 
-            item = _parsear_card(texto, href)
+            item = _parsear_card(texto, href, html)
             if item is None:
                 continue
 
@@ -343,6 +375,7 @@ async def enviar_para_api(promocoes: list[PromocaoBruta]) -> None:
                 "pontuacao_e_teto": p.pontuacao_e_teto,
                 "pontuacao_clube": str(p.pontuacao_clube) if p.pontuacao_clube is not None else None,
                 "codigo_externo": p.codigo_externo,
+                "nome_exibicao": p.nome_exibicao,
                 "data_inicio": p.data_inicio.isoformat() if p.data_inicio else None,
                 "data_fim": p.data_fim.isoformat() if p.data_fim else None,
                 "origem_detalhe": "COLETOR_NATIVO_LIVELO",

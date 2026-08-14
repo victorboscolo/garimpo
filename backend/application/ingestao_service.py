@@ -39,6 +39,7 @@ class PromocaoBrutaIn:
     pontuacao_e_teto: bool = False
     pontuacao_clube: Decimal | None = None
     codigo_externo: str | None = None
+    nome_exibicao: str | None = None
     data_inicio: datetime | None = None
     data_fim: datetime | None = None
 
@@ -129,9 +130,18 @@ async def ingerir_promocao_bruta(
     resultado_existente = await db.execute(stmt_existente)
     existente = resultado_existente.scalars().first()
     if existente is not None:
-        if _completar_dados_da_campanha(existente, bruta):
+        mudou = _completar_dados_da_campanha(existente, bruta)
+        # O parceiro também é complementado no caminho da duplicata: a imensa
+        # maioria das coletas cai aqui, e sem isto os parceiros já cadastrados
+        # nunca receberiam o nome legível — ele só chegaria em parceiro novo.
+        if bruta.nome_exibicao:
+            parceiro_existente = await db.get(Parceiro, existente.parceiro_id)
+            if parceiro_existente is not None and not parceiro_existente.nome_exibicao:
+                parceiro_existente.nome_exibicao = bruta.nome_exibicao
+                mudou = True
+        if mudou:
             await db.commit()
-            logger.info("Promoção já existente (hash=%s), complementada com dados da campanha.", hash_calculado)
+            logger.info("Promoção já existente (hash=%s), dados complementados.", hash_calculado)
         else:
             logger.info("Promoção já existente (hash=%s), descartando.", hash_calculado)
         return None
@@ -168,10 +178,16 @@ async def ingerir_promocao_bruta(
             nome=bruta.parceiro_nome_bruto,
             nome_normalizado=nome_normalizado,
             codigo_externo=bruta.codigo_externo,
+            nome_exibicao=bruta.nome_exibicao,
         )
         db.add(parceiro)
         await db.flush()
         logger.info("Parceiro '%s' cadastrado automaticamente (primeira ocorrência).", bruta.parceiro_nome_bruto)
+    elif bruta.nome_exibicao and not parceiro.nome_exibicao:
+        # Preenche o nome legível em parceiros já cadastrados antes de
+        # passarmos a capturar o alt da logo. Só quando está vazio: curadoria
+        # manual futura não pode ser sobrescrita pela coleta.
+        parceiro.nome_exibicao = bruta.nome_exibicao
 
     nova_promocao = Promocao(
         programa_id=programa.id,

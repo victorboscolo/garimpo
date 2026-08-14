@@ -13,6 +13,7 @@ from coletor_livelo_nativo import (
     _extrair_codigo_da_url,
     _extrair_cupom,
     _extrair_nome_da_url,
+    _extrair_nome_exibicao,
     _extrair_regulamento,
     _extrair_validade,
     _aplicar_regulamento,
@@ -212,3 +213,26 @@ def test_sem_regulamento_o_valor_do_card_permanece():
         "/juntar-pontos/parceiros/hope/HPE",
     )
     assert card.pontuacao_clube == Decimal("3")
+
+
+def test_nome_de_exibicao_vem_do_alt_da_imagem():
+    """O subtítulo da variante ("Seguro Viagem", "Consórcio") só existe na
+    logo, como atributo alt. É a única fonte que nomeia as 6 variantes da
+    Liga Vitória e diz que hero/HRH é o seguro viagem.
+    """
+    html = '<div><img src="x.png" alt="Logo Liga Vitória Consórcio"></div>'
+    assert _extrair_nome_exibicao(html) == "Liga Vitória Consórcio"
+
+
+def test_prefixo_logo_e_removido():
+    assert _extrair_nome_exibicao('<img alt="Logo Beach Park Hospedagens">') == "Beach Park Hospedagens"
+    assert _extrair_nome_exibicao('<img alt="Logo HERO SEGURO VIAGEM">') == "HERO SEGURO VIAGEM"
+
+
+def test_alt_sem_prefixo_e_mantido_como_esta():
+    assert _extrair_nome_exibicao('<img alt="Casas Bahia">') == "Casas Bahia"
+
+
+def test_card_sem_alt_nao_inventa_nome():
+    assert _extrair_nome_exibicao('<div><img src="x.png"></div>') is None
+    assert _extrair_nome_exibicao('<div><img alt=""></div>') is None
