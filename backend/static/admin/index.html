@@ -368,13 +368,19 @@
     color: var(--comum);
   }
 
-  /* Sem o cupom o cliente não pontua — é a condição que mais muda o resultado
-     prático de seguir a oferta, então não pode ficar igual aos demais selos. */
-  .selo-cupom {
+  /* Sem o cupom o cliente não pontua. É a única condição que zera o benefício,
+     então fica na linha do nome do parceiro, com o código junto — quem bate o
+     olho no card já sai sabendo o que precisa aplicar no carrinho. */
+  .tag-cupom {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    padding: 2px 8px;
+    border-radius: 6px;
     background: var(--excepcional-bg);
     color: var(--excepcional);
     border: 1px solid var(--excepcional);
-    font-weight: 600;
+    cursor: help;
   }
 
   /* Texto real da campanha, vindo da página de regras do parceiro. É onde a
@@ -560,6 +566,7 @@ async function carregar() {
           <span class="programa-tag">${esc(p.programa_nome)}</span>
           <span class="origem-tag origem-${esc(p.origem)}">${esc(formatOrigem(p))}</span>
           ${p.em_promocao ? '<span class="tag-promocao" title="A Livelo marca esta oferta como campanha ativa — ela é temporária. Mede coisa diferente da nota: a nota diz se a oferta é boa, este selo diz que ela vai expirar.">Promoção</span>' : ""}
+          ${p.requer_cupom ? `<span class="tag-cupom" title="Sem aplicar este cupom no carrinho, o cliente não pontua. É a única condição que zera o benefício.">🎫 Cupom${p.cupom ? " " + esc(p.cupom) : ""}</span>` : ""}
         </div>
         ${renderPontuacao(p)}
         ${renderRegulamento(p)}
@@ -631,11 +638,9 @@ function renderRegulamento(p) {
 function renderSelos(p) {
   const selos = [];
 
-  // Cupom primeiro e destacado: sem ele o cliente simplesmente não pontua.
-  // É a informação que mais muda o resultado prático de seguir a oferta.
-  if (p.requer_cupom) {
-    selos.push(`<span class="selo selo-cupom">🎫 Exige cupom${p.cupom ? ": <b>" + esc(p.cupom) + "</b>" : ""}</span>`);
-  }
+  // O cupom não entra aqui: sobe para a linha de tags, junto do nome do
+  // parceiro, porque é a condição que zera o benefício se ignorada e precisa
+  // ser vista antes de qualquer outra coisa do card.
   if (p.data_fim) {
     selos.push(`<span class="selo">🗓 Válida até ${formatDataCurta(p.data_fim)}</span>`);
   }
