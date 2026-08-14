@@ -1,7 +1,8 @@
 # Handoff para Claude Code
 
-> Revisado em 14/08/2026, ao fim de uma sessão que alterou substancialmente o
-> sistema, e atualizado depois do coletor v3 e da comparação por segmento. Os números aqui foram conferidos contra o banco no momento da
+> Revisado ao fim da sessão de 14/08/2026, que alterou substancialmente o
+> sistema — coletor v3, comparação por segmento, pilares por percentil e
+> publicação no Telegram. Os números aqui foram conferidos contra o banco na
 > escrita, não reconstruídos de memória. A seção 12 lista as afirmações do
 > handoff anterior que se provaram falsas — vale ler antes de confiar em
 > qualquer documento mais antigo.
@@ -20,13 +21,21 @@ atual, mas cuja arquitetura já foi antecipada nas tabelas polimórficas
 **Estágio atual**: MVP funcional de ponta a ponta rodando localmente no Mac do
 usuário. Coleta real diária, motor calibrado com dados reais, banco, API e
 painel de revisão estão implementados e em uso. O repositório tem controle de
-versão (19 commits) e 70 testes automatizados.
+versão (33 commits) e 105 testes automatizados.
 
-**O que mudou na sessão de 14/08**: o motor deixou de dar a mesma nota para
-todas as ofertas e passou a declarar contra o que comparou cada uma; o painel
-virou ferramenta de triagem real; e o coletor descobriu que a listagem embute um
-JSON estruturado com tudo tipado, o que o reduziu de ~3 minutos e ~50
-navegações para **7 segundos e uma requisição**.
+**O que mudou na sessão de 14/08**, em quatro frentes:
+
+- **Coleta**: a listagem embute um JSON estruturado com tudo tipado. Trocar o
+  regex por ele reduziu a coleta de ~3 minutos e ~50 navegações para **7
+  segundos e uma requisição**, e trouxe dados que o texto renderizado nunca
+  expôs — a pontuação fora de campanha e as categorias do parceiro.
+- **Motor**: as notas eram todas 60,00. Hoje o motor diferencia, declara contra
+  o que comparou cada oferta e pontua por **posição na distribuição** em vez de
+  razão com a média, o que eliminou a saturação no topo.
+- **Painel**: virou ferramenta de triagem — ordenado por nota, com ações em
+  lote, critérios do motor e as condições da oferta visíveis.
+- **Publicação**: o Telegram saiu do papel. Fila com curadoria humana, prévia da
+  mensagem antes do envio e aviso quando o publicado deixa de valer.
 
 ## 2. Escopo atual e limites
 
@@ -40,7 +49,10 @@ navegações para **7 segundos e uma requisição**.
 **Fora do escopo atual (adiado, não excluído):**
 - Garimpo Emissões — o handoff anterior citava um `Cap8` de notas de
   arquitetura que **não existe no repositório** (há apenas Cap. 3 a 7).
-- Publicação automática (Telegram) — desenhada, **não implementada**.
+- Publicação **automática** — a arquitetura prevê `modo: AUTOMATICO` em
+  `configuracoes`, mas o disparo na aprovação não foi implementado a pedido do
+  usuário: enquanto o motor amadurece, cada lote passa por curadoria. Configurar
+  AUTOMATICO hoje registra um aviso e se comporta como MANUAL.
 - Autenticação — endpoints são públicos; ver seção 8.
 - Coletor da Esfera — programa cadastrado no banco, sem coletor.
 
@@ -57,16 +69,16 @@ navegações para **7 segundos e uma requisição**.
 
 | Componente | Status | Observação |
 |---|---|---|
-| Controle de versão | IMPLEMENTADO | 19 commits; `.gitignore` cobre `.env`, `venv/`, logs, `.pytest_cache` |
+| Controle de versão | IMPLEMENTADO | 33 commits; `.gitignore` cobre `.env`, `venv/`, logs, `.pytest_cache` |
 | Modelo de dados | IMPLEMENTADO | 18 tabelas, migrations 0001–0007 aplicadas |
-| Motor de Análise V1 | IMPLEMENTADO | 6 pilares; base de comparação em cascata (família → segmento → mercado) |
+| Motor de Análise V1 | IMPLEMENTADO | 6 pilares; comparativos por percentil; base em cascata (família → segmento → mercado) |
 | Coletor Livelo nativo (macOS) | IMPLEMENTADO | lê o JSON estruturado da listagem; parsing de texto como fallback; 41 testes |
 | Coletor Livelo em Docker | ABANDONADO | bloqueado por anti-robô (HTTP 403); não usar |
-| Agendamento (`launchd`) | IMPLEMENTADO | diário às 10:05; só roda com o Mac ligado e logado |
+| Agendamento (`launchd`) | IMPLEMENTADO | coleta diária 10:05 e recalibração semanal seg. 11h; só roda com o Mac ligado |
 | API (FastAPI) | IMPLEMENTADO | listagem ordenada, aprovação/rejeição individual e em lote, ingestão, reclassificação |
 | Painel admin | IMPLEMENTADO | triagem por nota, ações em lote, critérios do motor, regulamento e selos |
-| Testes automatizados | PARCIAL | 29 backend + 41 coletor, todos de lógica pura; nada de API/banco |
-| Publicação (Telegram) | PLANEJADO | tabela `publicacoes` existe, integração não |
+| Testes automatizados | PARCIAL | 64 backend + 41 coletor, todos de lógica pura; nada de API/banco |
+| Publicação (Telegram) | IMPLEMENTADO | fila com curadoria, prévia, envio em lote, diagnóstico e aviso de divergência |
 | Autenticação | PENDENTE | ver seção 8 |
 | Coletor Esfera | PENDENTE | nenhum código |
 
@@ -74,19 +86,22 @@ navegações para **7 segundos e uma requisição**.
 
 | | |
 |---|---|
-| Promoções | 339 — 275 aprovadas, 62 pendentes, 2 rejeitadas |
+| Promoções | 339 — 336 aprovadas, 3 rejeitadas, 0 pendentes |
 | Parceiros | 255, praticamente todos com nome de exibição |
 | Categorias de origem / vínculos | 37 / 500 |
-| Com pontuação base (`parityBau`) | 253 |
-| Com alcance no marketplace resolvido | 241 |
-| Com cupom / validade | 44 / 60 |
+| Publicadas no Telegram | 2 |
 
-**Distribuição das notas:** Pouco atrativa 4, Comum 166, Boa 105, Excelente 51,
-Excepcional 13. Antes desta sessão, **todas as notas eram 60,00**.
+**Distribuição das notas:** Pouco atrativa 84, Comum 103, Boa 113, Excelente 28,
+Excepcional 11. Antes desta sessão, **todas as notas eram 60,00**.
 
-**Base de comparação:** 196 classificações usam segmento (confiança MEDIA) e
-143 caem no mercado (BAIXA). A justificativa de cada classificação diz
-explicitamente contra o que a oferta foi comparada.
+As faixas foram recalibradas junto com a mudança para percentil: como a nota
+passou a medir posição no mercado, as faixas marcam posição também —
+Excepcional é o topo 3%, Excelente o topo 12%, Boa é estar acima da mediana.
+Manter os cortes antigos faria "Excelente" valer para um quarto do mercado.
+
+**Base de comparação:** 281 classificações usam segmento (confiança MEDIA) e 58
+caem no mercado (BAIXA). A justificativa de cada uma diz explicitamente contra o
+que a oferta foi comparada e quanto do programa ela supera.
 
 **Limitação viva:** só 26 dos 255 parceiros têm mais de uma oferta aprovada, e
 por isso quase nenhuma classificação alcança confiança ALTA (histórico próprio
@@ -119,6 +134,13 @@ PostgreSQL (Docker, porta exposta só em 127.0.0.1)
         ↓
 Painel (static/admin/index.html, servido pelo próprio FastAPI)
     → humano aprova ou rejeita, individualmente ou em lote
+        ↓
+application/publicacao_service.py
+    → monta a fila: aprovadas, acima do limiar do canal, não vencidas e
+      ainda não enviadas. A fila é derivada, nunca materializada
+    → application/telegram/mensagens.py monta o texto por canal
+    → infrastructure/telegram/cliente.py envia; cada tentativa vira uma
+      linha em `publicacoes` (ENVIADO ou FALHA com o motivo)
 ```
 
 **Por que o coletor roda fora do Docker:** a Livelo bloqueia (403) Chromium
@@ -185,6 +207,35 @@ Duas armadilhas encontradas ao integrar, ambas ligadas ao hash:
 É estrutura interna do site e pode mudar sem aviso, por isso o parsing de texto
 segue implementado como fallback.
 
+### Pilares comparativos por percentil
+
+A curva original era `pontuação ÷ referência × 50`, com teto em 100 — o dobro da
+referência já era nota máxima. Como as médias de segmento ficam entre 2 e 3
+pontos e a de mercado em 5,5, o teto caía entre 4 e 11, enquanto o mercado
+oferece 20, 40 e 100 pontos. O motor ficava cego justamente no topo, que é onde
+as decisões de publicação acontecem: 38 classificações empatadas em 100 no pilar
+Histórico e 33 no de Atratividade, com uma oferta de 12 pontos valendo o mesmo
+que uma de 40.
+
+A nota passa a ser a posição na distribuição de referência. Empates dividem a
+posição, o que importa porque a mediana do mercado é 2 pontos e metade das
+ofertas empata nesse valor.
+
+O ganho decisivo é ser **autocalibrante**: se todas as ofertas dobrarem, ninguém
+muda de posição e portanto ninguém muda de categoria. Com a curva anterior, uma
+inflação geral do mercado passaria despercebida.
+
+### Amostra mínima antes de usar o histórico próprio
+
+Uma única oferta anterior não é histórico, é coincidência: a Riachuelo passou de
+3 para 7 pontos e o pilar devolvia 100, afirmando "o dobro do normal" a partir
+de uma observação só. 95 classificações estavam nessa situação, 29 delas como
+Excelente ou Excepcional. Abaixo de duas observações a cascata cai no segmento.
+
+Registrado como limite honesto: isso **não** resolve o caso da Riachuelo. O
+usuário sabe que ela costuma chegar a 10 pontos; o sistema viu duas ofertas.
+Nenhuma mudança de curva substitui observação — só tempo de coleta.
+
 ### ⚠️ O hash de deduplicação
 
 `calcular_hash` (`application/ingestao_service.py`) define se uma oferta
@@ -231,8 +282,12 @@ nunca toca no conteúdo da oferta.
 **Fonte:** `https://www.livelo.com.br/juntar-pontos/todos-os-parceiros` (público,
 sem login) e as páginas de regras dos parceiros com campanha ativa.
 
-- Coleta 1x/dia às 10:05. **A CONFIRMAR**: o horário se baseia num entendimento
-  informal de que a Livelo atualiza às 10h; não há fonte oficial.
+- Coleta 1x/dia às 10:05, e recalibração semanal às segundas 11h — ambas pelo
+  `launchd`, que recupera execuções perdidas quando o Mac dorme. O agendador em
+  container foi removido justamente por descartá-las: acumulava avisos de "run
+  time was missed by 3:17:28" enquanto disparava o coletor bloqueado.
+- **A CONFIRMAR**: o horário da coleta se baseia num entendimento informal de que
+  a Livelo atualiza às 10h; não há fonte oficial.
 - Uma navegação por página, sem paralelismo. A visita ao detalhe acrescenta ~50
   navegações sequenciais.
 - **Nenhuma credencial, cookie de sessão ou bypass é usado.** O sistema não
@@ -255,19 +310,22 @@ vanilla; Docker Compose.
 ```
 backend/
   api/v1/          # rotas e schemas
-  application/     # ingestao_service.py, condicoes.py, motor/ (pilares,
-                   #   historico, segmento, servico), configuracoes_service.py
+  application/     # ingestao_service.py, condicoes.py, divergencia.py,
+                   #   publicacao_service.py, telegram/mensagens.py,
+                   #   motor/ (pilares, historico, segmento, percentil, servico)
+  infrastructure/  # db/ e telegram/cliente.py (só envia; lê o token do .env)
   domain/          # modelos SQLAlchemy
   infrastructure/  # conexão com o banco
   migrations/      # Alembic (0001–0007)
   scripts_backfill/# backfills pontuais, com dry-run
   static/admin/    # painel
-  tests/           # 29 testes de lógica pura
+  tests/           # 64 testes de lógica pura
 coletor-nativo/    # roda fora do Docker, venv próprio
   coletor_livelo_nativo.py # orquestra a coleta; fallback de texto
   parceiros_json.py        # lê o JSON estruturado da página (caminho principal)
   test_coletor_livelo.py + test_parceiros_json.py   # 41 testes
-docs/GAR-1100/     # arquitetura (Cap. 3 a 8)
+scripts/           # recalibrar.sh + plist do launchd, backup.sh
+docs/GAR-1100/     # arquitetura (Cap. 3 a 7)
 docs/ai/           # este handoff
 ```
 
@@ -279,7 +337,8 @@ docker compose exec backend python -m pytest tests/ -q  # testes do backend
 cd coletor-nativo && ./venv/bin/python3 -m pytest test_coletor_livelo.py -q
 open http://localhost:8000/admin/                       # painel
 cd coletor-nativo && ./venv/bin/python3 coletor_livelo_nativo.py   # coleta manual
-launchctl start com.garimpo.coletor-livelo              # força o agendamento
+launchctl start com.garimpo.coletor-livelo              # força a coleta
+./scripts/recalibrar.sh                                 # reprocessa tudo agora
 ```
 
 **Testes:** a suíte cobre **lógica pura** — parsing do coletor, faixas do motor,
@@ -301,7 +360,9 @@ defasada ele some do container. `docker compose build backend` resolve.
 | Poucos parceiros com histórico próprio | Limitação temporária | Médio | 26 de 255; a cascata por segmento cobre o resto enquanto amadurece |
 | Agrupamento canônico vazio | Curadoria | Baixo | `categorias_origem.categoria_id` nulo nos 37 slugs; preencher reduz os agrupadores sem recoletar |
 | Coletor depende do Mac ligado | Operacional | Médio | Coleta diária pode falhar em silêncio; não há monitoramento |
-| Sem teste de API/banco | Qualidade | Médio | Três bugs desta sessão (MissingGreenlet, MultipleResultsFound, fuso na validade) só apareceram em execução real |
+| Sem teste de API/banco | Qualidade | Médio | Vários bugs desta sessão (MissingGreenlet, MultipleResultsFound, fuso na validade, canal não configurado bloqueando o lote) só apareceram em execução real |
+| Rejeitadas com classificação velha | Consistência | Baixo | `reclassificar-todas` pula REJEITADAS por desenho; 2 registros mantêm categoria de antes da recalibração |
+| Canal PUBLICO sem ID | Configuração | Baixo | Só o AVANCADO existe; a fila ignora canais não configurados |
 | Categorias de parceiro vazias | Lacuna | Médio | 8 categorias cadastradas, 0 dos 249 parceiros classificado. Impede comparação por segmento |
 | Horário de atualização da Livelo | Premissa | Baixo | Observar empiricamente |
 
@@ -318,10 +379,12 @@ carregamento:
 
 Não precisa de endpoint novo nem migration — é trabalho só de tela.
 
-### Tarefa B — Publicação no Telegram
-É o objetivo do produto e não existe nada além da tabela `publicacoes`. O
-usuário quer publicar para obter crítica externa ao processo, não só para
-divulgar ofertas. Toda publicação continua exigindo aprovação humana prévia.
+### Tarefa B — Calibrar com o retorno dos validadores
+A publicação está pronta e as duas primeiras mensagens foram enviadas a um canal
+de validadores — pessoas de uma agência de viagens, que vão criticar tanto a
+oferta quanto a avaliação. O retorno delas é o insumo que falta para calibrar:
+pesos, faixas e o texto das mensagens são todos dados em `configuracoes` ou
+strings, ajustáveis sem deploy.
 
 ### Tarefa C — Teste de API e banco
 As três falhas mais caras desta sessão passaram por toda a suíte de lógica pura
