@@ -8,11 +8,13 @@ POST /promocoes/ingerir (coletores externos, ex: coletor nativo Livelo).
 """
 import hashlib
 import logging
+from datetime import datetime
 from dataclasses import dataclass
 from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import set_committed_value
 
 from application.motor.servico import classificar_promocao
 from domain.cadastros import Marca, Parceiro, Programa
@@ -37,6 +39,8 @@ class PromocaoBrutaIn:
     pontuacao_e_teto: bool = False
     pontuacao_clube: Decimal | None = None
     codigo_externo: str | None = None
+    data_inicio: datetime | None = None
+    data_fim: datetime | None = None
 
 
 def calcular_hash(bruta: PromocaoBrutaIn) -> str:
@@ -68,6 +72,45 @@ def calcular_hash(bruta: PromocaoBrutaIn) -> str:
     return hashlib.sha256(base.encode("utf-8")).hexdigest()
 
 
+def _completar_dados_da_campanha(existente: Promocao, bruta: PromocaoBrutaIn) -> bool:
+    """Preenche em uma promoção já existente os dados de campanha que só
+    passamos a coletar depois que ela foi gravada. Devolve True se mudou algo.
+
+    Exceção deliberada e estreita à imutabilidade da promoção (RN-001). A regra
+    continua valendo para o conteúdo da oferta: mudança de pontuação, cupom,
+    clube ou variante altera o hash e cria registro novo, nunca sobrescreve.
+
+    O que se preenche aqui é diferente — são campos que a oferta sempre teve e
+    nós é que não estávamos capturando, porque o coletor só lia a listagem. Sem
+    isso, as campanhas já gravadas nunca receberiam seu regulamento: o hash não
+    muda (regulamento e datas não entram nele), então a promoção seria
+    descartada como duplicata e o texto buscado na página de detalhe se perderia.
+
+    Só preenche o que está vazio. Nada aqui sobrescreve valor já existente.
+    """
+    mudou = False
+
+    if bruta.regulamento_texto and not _tem_regulamento_real(existente.regulamento_texto):
+        existente.regulamento_texto = bruta.regulamento_texto
+        mudou = True
+    if bruta.data_inicio and existente.data_inicio is None:
+        existente.data_inicio = bruta.data_inicio
+        mudou = True
+    if bruta.data_fim and existente.data_fim is None:
+        existente.data_fim = bruta.data_fim
+        mudou = True
+
+    return mudou
+
+
+def _tem_regulamento_real(texto: str | None) -> bool:
+    """O coletor antigo gravava uma frase sobre si mesmo ("Coletado do site
+    oficial da Livelo...") em `regulamento_texto`. Isso não é regulamento e
+    pode ser substituído pelo texto real da campanha.
+    """
+    return bool(texto) and "campanha válida" in texto.lower()
+
+
 async def ingerir_promocao_bruta(
     db: AsyncSession, bruta: PromocaoBrutaIn, origem_detalhe: str
 ) -> Promocao | None:
@@ -78,10 +121,19 @@ async def ingerir_promocao_bruta(
     """
     hash_calculado = calcular_hash(bruta)
 
-    stmt_existente = select(Promocao).filter_by(hash_promocao=hash_calculado)
+    # `.first()` e não `.scalar_one_or_none()`: o hash não tem constraint de
+    # unicidade e pode repetir legitimamente — uma correção de dado ou uma
+    # oferta que volta ao valor anterior produzem duas linhas com o mesmo
+    # hash. Isso não pode derrubar a ingestão do dia inteiro.
+    stmt_existente = select(Promocao).filter_by(hash_promocao=hash_calculado).limit(1)
     resultado_existente = await db.execute(stmt_existente)
-    if resultado_existente.scalar_one_or_none() is not None:
-        logger.info("Promoção já existente (hash=%s), descartando.", hash_calculado)
+    existente = resultado_existente.scalars().first()
+    if existente is not None:
+        if _completar_dados_da_campanha(existente, bruta):
+            await db.commit()
+            logger.info("Promoção já existente (hash=%s), complementada com dados da campanha.", hash_calculado)
+        else:
+            logger.info("Promoção já existente (hash=%s), descartando.", hash_calculado)
         return None
 
     stmt_programa = select(Programa).filter_by(nome=bruta.programa_nome)
@@ -131,6 +183,8 @@ async def ingerir_promocao_bruta(
         unidade_pontuacao=bruta.unidade_pontuacao,
         pontuacao_e_teto=bruta.pontuacao_e_teto,
         pontuacao_clube=bruta.pontuacao_clube,
+        data_inicio=bruta.data_inicio,
+        data_fim=bruta.data_fim,
         requer_clube=bruta.requer_clube,
         qual_clube=bruta.qual_clube,
         requer_cupom=bruta.requer_cupom,
@@ -150,7 +204,13 @@ async def ingerir_promocao_bruta(
     db.add(nova_promocao)
     await db.flush()
 
-    await classificar_promocao(db, nova_promocao)
+    classificacao = await classificar_promocao(db, nova_promocao)
+    # Mesmo motivo dos relacionamentos acima: `classificacao_ativa` faz parte
+    # da resposta da API, e sem preencher aqui o Pydantic tentaria carregá-la
+    # sob demanda ao serializar — lazy-load que estoura em sessão assíncrona.
+    # `set_committed_value` popula sem marcar alteração (a relação é viewonly).
+    set_committed_value(nova_promocao, "classificacao_ativa", classificacao)
+
     await db.commit()
 
     logger.info("Promoção criada e classificada: id=%s origem=%s", nova_promocao.id, origem_detalhe)

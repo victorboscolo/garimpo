@@ -346,6 +346,29 @@
     color: var(--comum);
   }
 
+  /* Sem o cupom o cliente não pontua — é a condição que mais muda o resultado
+     prático de seguir a oferta, então não pode ficar igual aos demais selos. */
+  .selo-cupom {
+    background: var(--excepcional-bg);
+    color: var(--excepcional);
+    border: 1px solid var(--excepcional);
+    font-weight: 600;
+  }
+
+  /* Texto real da campanha, vindo da página de regras do parceiro. É onde a
+     restrição aparece: o card da listagem nunca a menciona. */
+  .regulamento-campanha {
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--stone-700);
+    background: var(--stone-50);
+    border: 1px solid var(--stone-100);
+    border-radius: 8px;
+    padding: 8px 11px;
+    margin: 0 0 10px;
+    max-width: 62ch;
+  }
+
   .toggle-detalhes {
     background: none;
     border: none;
@@ -516,6 +539,7 @@ async function carregar() {
           <span class="origem-tag origem-${esc(p.origem)}">${esc(formatOrigem(p))}</span>
         </div>
         ${renderPontuacao(p)}
+        ${renderRegulamento(p)}
         <div class="coletado-em">Coletado em ${formatData(p.created_at)}</div>
         ${renderClassificacao(p)}
         ${renderSelos(p)}
@@ -565,13 +589,49 @@ function renderClassificacao(p) {
   `;
 }
 
+// O regulamento sintético que o coletor escrevia sobre si mesmo não é
+// restrição nenhuma — só o texto real da campanha interessa aqui.
+function temRegulamentoReal(p) {
+  return !!p.regulamento_texto && /campanha v[áa]lida/i.test(p.regulamento_texto);
+}
+
+function renderRegulamento(p) {
+  if (!temRegulamentoReal(p)) return "";
+  return `<div class="regulamento-campanha">${esc(p.regulamento_texto)}</div>`;
+}
+
 function renderSelos(p) {
   const selos = [];
-  if (p.requer_clube) selos.push(`🏷 Clube${p.qual_clube ? ": " + esc(p.qual_clube) : ""}`);
-  if (p.requer_cupom) selos.push(`🎫 Cupom${p.cupom ? ": " + esc(p.cupom) : ""}`);
-  if (p.disponibilidade && p.disponibilidade !== "PUBLICA") selos.push(`🔒 ${esc(p.disponibilidade)}`);
+
+  // Cupom primeiro e destacado: sem ele o cliente simplesmente não pontua.
+  // É a informação que mais muda o resultado prático de seguir a oferta.
+  if (p.requer_cupom) {
+    selos.push(`<span class="selo selo-cupom">🎫 Exige cupom${p.cupom ? ": <b>" + esc(p.cupom) + "</b>" : ""}</span>`);
+  }
+  if (p.data_fim) {
+    selos.push(`<span class="selo">🗓 Válida até ${formatDataCurta(p.data_fim)}</span>`);
+  }
+  if (p.requer_clube) {
+    selos.push(`<span class="selo">🏷 Exige Clube${p.qual_clube ? ": " + esc(p.qual_clube) : ""}</span>`);
+  }
+  if (p.disponibilidade && p.disponibilidade !== "PUBLICA") {
+    selos.push(`<span class="selo">🔒 ${esc(p.disponibilidade)}</span>`);
+  }
+
   if (selos.length === 0) return "";
-  return `<div class="selos">${selos.map(s => `<span class="selo">${s}</span>`).join("")}</div>`;
+  return `<div class="selos">${selos.join("")}</div>`;
+}
+
+// Validade de campanha é data de calendário, não instante: a Livelo diz "até
+// 17/08", não "até 17/08 às 00h de algum fuso". Gravamos meia-noite UTC, então
+// formatar no fuso local (UTC−3) exibiria 16/08 — um dia a menos, o que faria
+// uma oferta ainda válida parecer vencida.
+function formatDataCampanha(isoString, opcoes) {
+  return new Date(isoString).toLocaleDateString("pt-BR", { timeZone: "UTC", ...opcoes });
+}
+
+function formatDataCurta(isoString) {
+  return formatDataCampanha(isoString, { day: "2-digit", month: "2-digit" });
 }
 
 const CRITERIO_LABEL = {
@@ -615,8 +675,8 @@ function renderDetalhes(p) {
     ["Marketplace", p.marketplace_status],
     ["Resumo do regulamento", p.regulamento_resumo],
     ["Regulamento", p.regulamento_texto],
-    ["Início", p.data_inicio ? formatData(p.data_inicio) : null],
-    ["Fim", p.data_fim ? formatData(p.data_fim) : null],
+    ["Início", p.data_inicio ? formatDataCampanha(p.data_inicio, { day: "2-digit", month: "2-digit", year: "numeric" }) : null],
+    ["Fim", p.data_fim ? formatDataCampanha(p.data_fim, { day: "2-digit", month: "2-digit", year: "numeric" }) : null],
     ["Código", p.codigo_amigavel],
   ].filter(([, valor]) => valor !== null && valor !== undefined && valor !== "");
 

@@ -20,6 +20,7 @@ import logging
 import re
 import sys
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
 
 import httpx
@@ -39,6 +40,24 @@ PADRAO_PONTOS = re.compile(r'(Até\s+)?(\d+)\s*pontos?\s*por\s*(R\$|U\$)\s*(\d+)
 PADRAO_ERAM = re.compile(r'Eram\s+(\d+)\s*pontos?')
 
 UNIDADE_POR_MOEDA = {"R$": "pontos_por_real", "U$": "pontos_por_dolar"}
+
+# A pagina de detalhe do parceiro traz uma linha comecando com "Campanha
+# valida" que descreve a restricao real da oferta. Validado em 14/08/2026
+# contra Renner, Olympikus e Beleza na Web.
+PADRAO_CAMPANHA = re.compile(r"^\s*Campanha v[áa]lida.*$", re.MULTILINE | re.IGNORECASE)
+
+# "de 14/08/2026 a 16/08/2026" e tambem "de 13 a 14/08/2026", em que o dia
+# inicial vem solto e herda mes e ano do fim.
+PADRAO_VALIDADE = re.compile(
+    r"de\s+(\d{1,2})(?:/(\d{1,2})/(\d{4}))?\s+a\s+(\d{1,2})/(\d{1,2})/(\d{4})",
+    re.IGNORECASE,
+)
+
+# "Campanha valida em 14/08/2026" — campanha de um dia so.
+PADRAO_VALIDADE_DIA_UNICO = re.compile(r"v[áa]lida\s+em\s+(\d{1,2})/(\d{1,2})/(\d{4})", re.IGNORECASE)
+
+# "Utilize o cupom LIVELO." — sem o cupom o cliente nao pontua.
+PADRAO_CUPOM = re.compile(r"cupom\s+([A-Z0-9]{3,})")
 
 
 @dataclass
@@ -63,6 +82,12 @@ class PromocaoBruta:
     # Codigo da variante na URL. Um mesmo slug pode ter ofertas diferentes:
     # beach-park/BPK sao os Hoteis e beach-park/BHP os Ingressos.
     codigo_externo: str | None = None
+    # Periodo da campanha, extraido do regulamento na pagina de detalhe.
+    data_inicio: date | None = None
+    data_fim: date | None = None
+    # Interno: nao vai para a API. Marca os cards com selo "Promocao", que sao
+    # os que tem campanha ativa e, portanto, regulamento a buscar.
+    buscar_detalhe: bool = False
 
 
 def _extrair_nome_da_url(href: str) -> str:
@@ -88,6 +113,46 @@ def _extrair_codigo_da_url(href: str) -> str | None:
     # A Livelo serve alguns hrefs com espaco no fim ('/klubi-auto/AUT '):
     # sem limpar, 'AUT ' viraria um parceiro diferente de 'AUT'.
     return partes[-1].strip() or None
+
+
+def _extrair_regulamento(texto_pagina: str) -> str | None:
+    """A linha 'Campanha valida ...' da pagina de detalhe.
+
+    E a unica fonte da restricao real: o card da listagem nao a contem. O
+    Renner anuncia '10 pontos' sem qualquer ressalva, e so aqui aparece que os
+    10 valem na categoria Basicos e o resto da loja rende 2.
+    """
+    achado = PADRAO_CAMPANHA.search(texto_pagina)
+    return achado.group(0).strip() if achado else None
+
+
+def _extrair_validade(regulamento: str) -> tuple[date | None, date | None]:
+    """Periodo da campanha. Devolve (None, None) quando o texto nao informa —
+    nunca chuta data, porque validade errada e pior que validade ausente.
+    """
+    achado = PADRAO_VALIDADE.search(regulamento)
+    if not achado:
+        # Campanha de um dia so: "valida em 14/08/2026". Inicio e fim coincidem.
+        dia_unico = PADRAO_VALIDADE_DIA_UNICO.search(regulamento)
+        if dia_unico:
+            d, m, a = dia_unico.groups()
+            so_um_dia = date(int(a), int(m), int(d))
+            return so_um_dia, so_um_dia
+        return None, None
+
+    dia_ini, mes_ini, ano_ini, dia_fim, mes_fim, ano_fim = achado.groups()
+    fim = date(int(ano_fim), int(mes_fim), int(dia_fim))
+    inicio = date(
+        int(ano_ini) if ano_ini else fim.year,
+        int(mes_ini) if mes_ini else fim.month,
+        int(dia_ini),
+    )
+    return inicio, fim
+
+
+def _extrair_cupom(regulamento: str) -> str | None:
+    achado = PADRAO_CUPOM.search(regulamento)
+    return achado.group(1) if achado else None
 
 
 def _parsear_card(texto: str, href: str) -> PromocaoBruta | None:
@@ -131,7 +196,44 @@ def _parsear_card(texto: str, href: str) -> PromocaoBruta | None:
         pontuacao_e_teto=e_teto,
         pontuacao_clube=pontuacao_clube,
         codigo_externo=_extrair_codigo_da_url(href),
+        # So os cards com selo "Promocao" tem campanha ativa — 40 dos 248 em
+        # 14/08/2026. Visitar so esses mantem a coleta leve (~2 min em vez de
+        # ~12) e cobre exatamente onde mora o regulamento.
+        buscar_detalhe="Promoção" in texto,
     )
+
+
+async def enriquecer_com_detalhe(page, item: PromocaoBruta) -> None:
+    """Visita a pagina do parceiro e preenche regulamento, validade e cupom.
+
+    Falha de uma pagina nao derruba a coleta: a promocao segue com o que veio
+    da listagem, apenas sem os dados de restricao.
+    """
+    try:
+        resposta = await page.goto(item.url_origem, wait_until="domcontentloaded", timeout=30000)
+        if not resposta or resposta.status != 200:
+            logger.warning("Detalhe de '%s': HTTP %s", item.parceiro_nome_bruto,
+                           resposta.status if resposta else "sem resposta")
+            return
+        await page.wait_for_timeout(2500)
+        texto = await page.locator("body").inner_text()
+    except Exception as e:
+        logger.warning("Detalhe de '%s' falhou: %s", item.parceiro_nome_bruto, e)
+        return
+
+    regulamento = _extrair_regulamento(texto)
+    if not regulamento:
+        return
+
+    # Substitui a frase sintetica que o coletor escrevia por si mesmo pelo
+    # texto real da campanha — a unica fonte da restricao.
+    item.regulamento_texto = regulamento
+    item.data_inicio, item.data_fim = _extrair_validade(regulamento)
+
+    cupom = _extrair_cupom(regulamento)
+    if cupom:
+        item.requer_cupom = True
+        item.cupom = cupom
 
 
 async def coletar() -> list[PromocaoBruta]:
@@ -184,6 +286,16 @@ async def coletar() -> list[PromocaoBruta]:
             vistos.add(chave)
             promocoes.append(item)
 
+        com_campanha = [item for item in promocoes if item.buscar_detalhe]
+        logger.info(
+            "Buscando regulamento de %d ofertas com campanha ativa (de %d).",
+            len(com_campanha), len(promocoes),
+        )
+        for indice, item in enumerate(com_campanha, start=1):
+            await enriquecer_com_detalhe(page, item)
+            if indice % 10 == 0:
+                logger.info("  %d/%d detalhes visitados", indice, len(com_campanha))
+
         await browser.close()
 
     logger.info("Coleta finalizada: %d promoções extraídas (após remover duplicatas).", len(promocoes))
@@ -210,6 +322,8 @@ async def enviar_para_api(promocoes: list[PromocaoBruta]) -> None:
                 "pontuacao_e_teto": p.pontuacao_e_teto,
                 "pontuacao_clube": str(p.pontuacao_clube) if p.pontuacao_clube is not None else None,
                 "codigo_externo": p.codigo_externo,
+                "data_inicio": p.data_inicio.isoformat() if p.data_inicio else None,
+                "data_fim": p.data_fim.isoformat() if p.data_fim else None,
                 "origem_detalhe": "COLETOR_NATIVO_LIVELO",
             }
             try:
