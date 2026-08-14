@@ -132,12 +132,20 @@ async def _media_do_segmento(db: AsyncSession, categoria_origem_id, programa_id)
     return Decimal(str(sum(valores) / len(valores))), len(valores)
 
 
+# Uma única oferta anterior não é histórico: é uma coincidência. Comparar com
+# ela produz razões extremas — 7 contra 3 vira "o dobro do normal" e satura o
+# pilar em 100 — sem que exista base para afirmar o que é normal para o
+# parceiro. Abaixo deste mínimo, o segmento é a comparação mais honesta.
+MINIMO_PARA_USAR_FAMILIA = 2
+
+
 async def obter_base_comparacao(
     db: AsyncSession,
     parceiro_id: uuid.UUID,
     programa_id: uuid.UUID,
     excluir_promocao_id: uuid.UUID | None = None,
     minimo_segmento: int = 5,
+    minimo_familia: int | None = None,
 ) -> BaseComparacao:
     """Resolve contra o que comparar a oferta, em cascata.
 
@@ -152,11 +160,15 @@ async def obter_base_comparacao(
     "servicos" reúne 29 parceiros que fazem coisas bem diferentes. Por isso ela
     fica no nível 2 e a confiança cai para MEDIA quando é usada.
     """
+    limiar = await resolver_configuracao(db, "historico_suficiente", programa_id=programa_id)
+    if minimo_familia is None:
+        minimo_familia = (limiar or {}).get("min_para_base", MINIMO_PARA_USAR_FAMILIA)
+
     familia = await obter_historico_familia(
         db, parceiro_id=parceiro_id, programa_id=programa_id,
         excluir_promocao_id=excluir_promocao_id,
     )
-    if familia.media_ponderada is not None:
+    if familia.media_ponderada is not None and familia.total_campanhas_janela >= minimo_familia:
         return BaseComparacao(
             media_ponderada=familia.media_ponderada,
             total=familia.total_campanhas_janela,
