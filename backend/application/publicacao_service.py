@@ -132,17 +132,23 @@ async def montar_fila(db, config: dict, tipo: str | None = None) -> list[dict]:
     )
     aprovadas = (await db.execute(stmt)).unique().all()
 
-    enviadas = {
+    # Decisões já tomadas para o par (promoção, canal): tanto o que foi enviado
+    # quanto o que foi descartado sai da fila. Sem registrar o descarte, o item
+    # voltaria a cada carregamento — a fila é derivada, não guardada.
+    decididas = {
         (p.entidade_id, p.tipo)
         for p in (await db.execute(
-            select(Publicacao).filter_by(entidade_tipo=ENTIDADE_PROMOCAO, status="ENVIADO")
+            select(Publicacao).filter(
+                Publicacao.entidade_tipo == ENTIDADE_PROMOCAO,
+                Publicacao.status.in_(["ENVIADO", "DESCARTADO"]),
+            )
         )).scalars().all()
     }
 
     fila = []
     for promocao, classificacao in aprovadas:
         for canal in canais:
-            if (promocao.id, canal) in enviadas:
+            if (promocao.id, canal) in decididas:
                 continue
             if not deve_publicar(classificacao, canal, config):
                 continue
@@ -165,6 +171,34 @@ PAUSA_ENTRE_ENVIOS_SEGUNDOS = 3.5
 
 def estimar_duracao(quantidade: int) -> float:
     return max(0, quantidade - 1) * PAUSA_ENTRE_ENVIOS_SEGUNDOS
+
+
+async def descartar(db, itens: list[dict]) -> dict:
+    """Marca itens da fila como decididos-a-não-publicar.
+
+    Usa a própria tabela `publicacoes`, que já existe para registrar decisões de
+    publicação por canal — "não publicar" é uma delas. Sem `data_envio`, porque
+    nada foi enviado.
+
+    O registro é necessário porque a fila é derivada: sem ele, o item que você
+    não quer publicar reapareceria a cada carregamento. Desfazer um descarte é
+    apagar a linha correspondente.
+    """
+    from domain.motor import ENTIDADE_PROMOCAO, Publicacao
+
+    descartadas = 0
+    for item in itens:
+        db.add(Publicacao(
+            entidade_tipo=ENTIDADE_PROMOCAO,
+            entidade_id=item["promocao_id"],
+            canal="TELEGRAM",
+            tipo=item["tipo"],
+            status="DESCARTADO",
+        ))
+        descartadas += 1
+
+    await db.commit()
+    return {"descartadas": descartadas}
 
 
 async def despachar(

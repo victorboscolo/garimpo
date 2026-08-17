@@ -74,6 +74,18 @@ async def diagnostico(db: AsyncSession = Depends(get_db)):
     return {"canais": [await cliente.diagnosticar(tipo) for tipo in canais]}
 
 
+@router.post("/descartar")
+async def descartar(payload: DespacharIn, db: AsyncSession = Depends(get_db)):
+    """Tira da fila o que não vale publicar, sem enviar nada.
+
+    A decisão de não publicar é tão legítima quanto a de publicar, e precisa
+    ficar registrada: a fila é calculada a cada carregamento, então sem registro
+    o item descartado voltaria sempre.
+    """
+    itens = [item.model_dump() for item in (payload.itens or [])]
+    return await publicacao_service.descartar(db, itens)
+
+
 @router.post("/despachar")
 async def despachar(
     payload: DespacharIn | None = None,

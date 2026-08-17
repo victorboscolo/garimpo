@@ -750,15 +750,34 @@ function atualizarBarraFila() {
     `${n} mensage${n === 1 ? "m" : "ns"} selecionada${n === 1 ? "" : "s"}${tempo}`;
   document.getElementById("acoes-lote").innerHTML = `
     <button class="lote-limpar" onclick="limparSelecaoFila()">Limpar</button>
+    <button class="lote-rejeitar" onclick="descartarSelecionadas()">Descartar selecionadas</button>
     <button class="lote-aprovar" onclick="publicarSelecionadas()">Publicar selecionadas</button>
   `;
 }
 
-async function publicarSelecionadas() {
-  const itens = [...selecionadasFila].map(c => {
+function itensSelecionadosDaFila() {
+  return [...selecionadasFila].map(c => {
     const [promocao_id, tipo] = c.split("|");
     return { promocao_id, tipo };
   });
+}
+
+async function descartarSelecionadas() {
+  const itens = itensSelecionadosDaFila();
+  if (itens.length === 0) return;
+  if (!confirm(`Descartar ${itens.length} da fila?\n\nElas não serão publicadas e somem da lista. Nada é enviado ao Telegram.`)) return;
+
+  const r = await (await fetch("/api/v1/publicacoes/descartar", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ itens }),
+  })).json();
+  alert(`${r.descartadas} descartada(s).`);
+  carregarFila();
+}
+
+async function publicarSelecionadas() {
+  const itens = itensSelecionadosDaFila();
   if (itens.length === 0) return;
 
   const minutos = Math.ceil((itens.length - 1) * 3.5 / 60);
