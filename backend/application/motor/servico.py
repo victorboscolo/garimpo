@@ -5,6 +5,7 @@ resolve a categoria pelas faixas configuradas, e persiste o resultado em
 `classificacoes` — sempre desativando a classificação anterior da mesma
 entidade (RN-002, Cap. 3 Rev. 2).
 """
+import logging
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -16,6 +17,8 @@ from application.motor import pilares
 from application.motor.historico import obter_base_comparacao, obter_historico_familia
 from domain.motor import ENTIDADE_PROMOCAO, Classificacao
 from domain.promocoes import CategoriaPromocao, Promocao
+
+logger = logging.getLogger("garimpo.motor")
 
 VERSAO_MOTOR = "v1.0"
 
@@ -176,3 +179,39 @@ async def classificar_promocao(db: AsyncSession, promocao: Promocao) -> Classifi
     await db.flush()
 
     return nova_classificacao
+
+
+async def reclassificar_todas(db: AsyncSession) -> dict:
+    """Reprocessa todas as promoções PENDENTES e APROVADAS.
+
+    Existe como serviço, e não só como endpoint, porque tem mais de um
+    chamador: o botão do painel, o job semanal e a aprovação em lote.
+
+    Por que a aprovação precisa disparar isto: desde que os pilares
+    comparativos passaram a pontuar por posição na distribuição, a nota deixou
+    de ser propriedade da oferta e virou posição relativa. Aprovar uma promoção
+    a coloca na base de comparação e desloca todas as outras — na primeira
+    recalibração automática, aprovar 26 ofertas mudou a nota de 360 das 369
+    existentes e a categoria de 63. Sem reprocessar no mesmo ato, a fila de
+    publicação é montada com notas de antes da aprovação, e chega-se a publicar
+    categoria que já não vale: três mensagens enviadas em 17/08 mudaram de
+    categoria 20 minutos depois.
+
+    REJEITADAS ficam de fora: elas não entram na base de comparação, então
+    reprocessá-las não muda nada de ninguém.
+    """
+    promocoes = (await db.execute(
+        select(Promocao).filter(Promocao.status.in_(["PENDENTE", "APROVADA"]))
+    )).scalars().unique().all()
+
+    processadas = erros = 0
+    for promocao in promocoes:
+        try:
+            await classificar_promocao(db, promocao)
+            processadas += 1
+        except Exception:
+            logger.exception("Falha ao reclassificar promoção %s", promocao.id)
+            erros += 1
+    await db.commit()
+
+    return {"total": len(promocoes), "processadas": processadas, "erros": erros}

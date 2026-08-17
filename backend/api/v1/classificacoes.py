@@ -44,18 +44,6 @@ async def reclassificar_todas(db: AsyncSession = Depends(get_db)):
 
     Promoções REJEITADAS não são reprocessadas (decisão já é definitiva).
     """
-    stmt = select(Promocao).filter(Promocao.status.in_(["PENDENTE", "APROVADA"]))
-    resultado = await db.execute(stmt)
-    promocoes = resultado.scalars().all()
+    from application.motor.servico import reclassificar_todas as executar
 
-    processadas = 0
-    erros = 0
-    for promocao in promocoes:
-        try:
-            await classificar_promocao(db, promocao)
-            processadas += 1
-        except Exception:
-            erros += 1
-    await db.commit()
-
-    return {"total": len(promocoes), "processadas": processadas, "erros": erros}
+    return await executar(db)

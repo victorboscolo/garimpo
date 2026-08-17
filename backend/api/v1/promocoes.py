@@ -164,7 +164,27 @@ async def _decidir_lote(
 
 @router.post("/aprovar-lote", response_model=LoteResultadoOut)
 async def aprovar_lote(payload: PromocaoAprovarLoteIn, db: AsyncSession = Depends(get_db)):
-    return await _decidir_lote(db, payload.ids, novo_status="APROVADA")
+    """Aprova o lote e reprocessa as classificações em seguida.
+
+    Aprovar não é um ato neutro sobre as demais promoções: desde que os pilares
+    comparativos pontuam por posição na distribuição, entrar na base de
+    comparação desloca todo mundo. Na primeira recalibração automática, aprovar
+    26 ofertas mudou a nota de 360 das 369 e a categoria de 63.
+
+    Sem reprocessar aqui, a fila de publicação seria montada com notas de antes
+    da aprovação — e chegou a acontecer: três mensagens publicadas em 17/08
+    mudaram de categoria 20 minutos depois, sem que nada no mundo tivesse
+    mudado além das próprias aprovações.
+
+    Custa ~2 segundos para as ~370 atuais, e só roda quando algo foi de fato
+    aprovado.
+    """
+    from application.motor.servico import reclassificar_todas
+
+    resultado = await _decidir_lote(db, payload.ids, novo_status="APROVADA")
+    if resultado.processadas > 0:
+        await reclassificar_todas(db)
+    return resultado
 
 
 @router.post("/rejeitar-lote", response_model=LoteResultadoOut)
