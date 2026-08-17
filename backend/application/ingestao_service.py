@@ -16,7 +16,11 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import set_committed_value
 
-from application.condicoes import resolver_marketplace, valor_e_condicionado
+from application.condicoes import (
+    PADRAO_FRASE_DO_COLETOR,
+    resolver_marketplace,
+    valor_e_condicionado,
+)
 from application.motor.servico import classificar_promocao
 from domain.cadastros import CategoriaOrigem, Marca, Parceiro, ParceiroCategoria, Programa
 from domain.promocoes import Promocao
@@ -184,8 +188,15 @@ def _tem_regulamento_real(texto: str | None) -> bool:
     """O coletor antigo gravava uma frase sobre si mesmo ("Coletado do site
     oficial da Livelo...") em `regulamento_texto`. Isso não é regulamento e
     pode ser substituído pelo texto real da campanha.
+
+    Antes verificava a presença de "campanha válida" — frase específica da
+    Livelo que a Esfera nunca usa (0 dos 168 regulamentos reais dela contêm
+    isso). Todo regulamento genuíno da Esfera parecia "não real": no painel,
+    o card nunca mostrava o bloco de regulamento em destaque, e no backend
+    toda coleta duplicada reescrevia o campo à toa. A checagem certa é o
+    oposto — só não é real quando bate o padrão do placeholder antigo.
     """
-    return bool(texto) and "campanha válida" in texto.lower()
+    return bool(texto) and not PADRAO_FRASE_DO_COLETOR.match(texto.strip())
 
 
 async def ingerir_promocao_bruta(

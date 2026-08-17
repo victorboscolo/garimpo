@@ -864,8 +864,14 @@ function renderClassificacao(p) {
 
 // O regulamento sintético que o coletor escrevia sobre si mesmo não é
 // restrição nenhuma — só o texto real da campanha interessa aqui.
+//
+// Antes verificava a presença de "campanha válida" — frase específica da
+// Livelo que a Esfera nunca usa (0 dos 168 regulamentos reais dela contêm
+// isso), então nenhum card da Esfera mostrava este bloco, mesmo tendo
+// regulamento completo. A checagem certa é o oposto: só não é real quando
+// bate o placeholder antigo ("Coletado do site oficial...").
 function temRegulamentoReal(p) {
-  return !!p.regulamento_texto && /campanha v[áa]lida/i.test(p.regulamento_texto);
+  return !!p.regulamento_texto && !/^coletado do site oficial/i.test(p.regulamento_texto.trim());
 }
 
 function renderRegulamento(p) {
