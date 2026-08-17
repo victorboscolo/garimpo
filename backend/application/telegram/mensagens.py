@@ -65,34 +65,73 @@ def _formatar_data(data) -> str:
     return data.strftime("%d/%m") if data else ""
 
 
+# A Livelo nunca passou de 484 caracteres de regulamento (17/08/2026, 364
+# promoções na base). A Esfera tem mediana de 1106 e quase todo mundo (166 de
+# 167) passa de 500 — o texto ali não é regulamento específico da oferta, é a
+# explicação genérica de como o programa funciona (esvaziar carrinho, CPF
+# cadastrado, prazo de crédito), igual em toda oferta. 500 dá folga sobre o
+# maior caso real da Livelo sem deixar a Esfera virar parede de texto.
+LIMITE_REGULAMENTO = 500
+
+
+def _regulamento_truncado(texto: str) -> str:
+    """Corta pelo tamanho, nunca pelo conteúdo — não julga o que é útil, só
+    limita quanto cabe na mensagem. O texto completo continua salvo no banco
+    e a um clique de distância, no link que toda mensagem já traz.
+    """
+    if len(texto) <= LIMITE_REGULAMENTO:
+        return texto
+    corte = texto.rfind(" ", 0, LIMITE_REGULAMENTO)
+    if corte <= 0:
+        corte = LIMITE_REGULAMENTO
+    return texto[:corte].rstrip(" .,;") + "… (regulamento completo no link abaixo)"
+
+
 def montar_mensagem(promocao, classificacao, tipo: str) -> str:
+    """Tópicos pré-determinados para o que já é dado limpo — Pontuação,
+    Validade, Cupom — em vez de bullets soltos. "Escopo" fica de fora de
+    propósito: não existe campo confiável para isso, só texto livre com
+    redação inconsistente por parceiro, e rotular uma leitura que o dado não
+    sustenta é pior que não ter o tópico. O regulamento (truncado, ver
+    `_regulamento_truncado`) continua como fonte crua de reserva no AVANÇADO,
+    nunca como um tópico "Escopo".
+    """
     linhas = [CATEGORIA_ROTULO.get(classificacao.categoria, classificacao.categoria), ""]
+
+    linhas.append(f"{promocao.parceiro_nome} ({promocao.programa_nome})")
 
     unidade = promocao.unidade_pontuacao
     teto = "até " if promocao.pontuacao_e_teto else ""
-    linhas.append(f"{promocao.parceiro_nome} — {teto}{_pontos(promocao.pontuacao, unidade)}")
-
+    # Clube e "fora da campanha" são fatos sobre a mesma coisa — quanto a
+    # oferta paga — por isso vivem dentro do tópico Pontuação, não espalhados
+    # em linhas soltas com ícones próprios.
+    pontuacao_partes = [f"{teto}{_pontos(promocao.pontuacao, unidade)}"]
     if promocao.pontuacao_clube:
-        linhas.append(f"💳 {_pontos(promocao.pontuacao_clube, unidade)} para assinantes do Clube")
+        pontuacao_partes.append(f"{_pontos(promocao.pontuacao_clube, unidade)} para assinantes do Clube")
+    if (
+        tipo == "AVANCADO"
+        and promocao.pontuacao_base is not None
+        and promocao.pontuacao_base < promocao.pontuacao
+    ):
+        pontuacao_partes.append(f"fora da campanha: {_pontos(promocao.pontuacao_base, unidade)}")
+    linhas.append(f"💰 Pontuação: {' — '.join(pontuacao_partes)}")
+
+    if promocao.data_fim:
+        linhas.append(f"🗓 Validade: até {_formatar_data(promocao.data_fim)}")
+
+    if promocao.requer_cupom and promocao.cupom:
+        linhas.append(f"🎫 Cupom: {promocao.cupom}")
 
     # A condição vai nos dois canais: avisar que o valor não vale para a compra
     # inteira é o que separa informar de iludir.
     if promocao.valor_condicionado:
         linhas.append("⚠️ Oferta condicionada — confira as regras antes de comprar")
 
-    if promocao.requer_cupom and promocao.cupom:
-        linhas.append(f"🎫 Use o cupom {promocao.cupom} no carrinho")
-
-    if promocao.data_fim:
-        linhas.append(f"🗓 Até {_formatar_data(promocao.data_fim)}")
-
     if tipo == "AVANCADO":
-        if promocao.pontuacao_base is not None and promocao.pontuacao_base < promocao.pontuacao:
-            linhas.append(f"📉 Fora da campanha esta loja rende {_pontos(promocao.pontuacao_base, unidade)}")
         if promocao.marketplace_status in MARKETPLACE_ROTULO:
             linhas.append(MARKETPLACE_ROTULO[promocao.marketplace_status])
         if promocao.regulamento_texto:
-            linhas += ["", promocao.regulamento_texto]
+            linhas += ["", _regulamento_truncado(promocao.regulamento_texto)]
 
     linhas += ["", f"🔗 {promocao.url_origem}"]
     return "\n".join(linhas)

@@ -17,6 +17,7 @@ from application.telegram.mensagens import montar_mensagem
 def _promocao(**ajustes):
     padrao = dict(
         parceiro_nome="Renner",
+        programa_nome="Livelo",
         pontuacao=Decimal("10"),
         unidade_pontuacao="pontos_por_real",
         pontuacao_base=Decimal("2"),
@@ -123,6 +124,16 @@ def test_link_da_oferta_sempre_presente():
         assert "livelo.com.br" in texto
 
 
+def test_programa_aparece_nas_duas_mensagens():
+    """Com mais de um programa (Livelo e Esfera) publicando no mesmo canal, o
+    link deixa de ser a única forma de saber de onde é a oferta — quem lê
+    precisa disso antes de abrir a mensagem, não só ao clicar.
+    """
+    for tipo in ("PUBLICO", "AVANCADO"):
+        texto = montar_mensagem(_promocao(programa_nome="Esfera"), _classificacao(), tipo)
+        assert "Esfera" in texto
+
+
 def test_singular_quando_e_um_ponto():
     """"1 pontos por R$ 1" denuncia texto gerado por máquina e tira a
     credibilidade da mensagem inteira.
@@ -190,3 +201,101 @@ def test_regulamento_informativo_seguido_de_boilerplate_mantem_o_util():
         _classificacao(), "AVANCADO",
     )
     assert "categoria Básicos" in texto
+
+
+def test_regulamento_muito_longo_e_truncado():
+    """A Livelo nunca passou de 484 caracteres de regulamento (17/08/2026,
+    364 promoções). A Esfera tem mediana de 1106 e 166 dos 167 parceiros
+    passam de 500 — o "regulamento na íntegra" do AVANÇADO virava uma parede
+    de texto genérico sobre como o programa funciona (esvaziar carrinho, CPF
+    cadastrado, prazo de crédito), sem nada específico desta oferta depois do
+    início. O início — onde mora o que muda por oferta (taxa, validade,
+    restrição de categoria) — precisa sobreviver inteiro.
+    """
+    cabeca = "Ganhe 6 pontos a cada R$ 1,00 em compras no site parceiro. Condições válidas de 17/08/2026 até 19/08/2026. "
+    cauda_generica = "Lembre-se que você precisa acessar a loja parceira através deste link. " * 20
+    texto_bruto = cabeca + cauda_generica
+
+    texto = montar_mensagem(
+        _promocao(regulamento_texto=texto_bruto, programa_nome="Esfera"),
+        _classificacao(), "AVANCADO",
+    )
+
+    assert cabeca in texto
+    assert texto_bruto not in texto
+    assert "regulamento completo" in texto.lower()
+    # A mensagem inteira, não só o regulamento, precisa ficar num tamanho
+    # legível no Telegram — bem abaixo do limite de 4096 da plataforma.
+    assert len(texto) < 1000
+
+
+def test_regulamento_dentro_do_limite_nao_e_truncado():
+    """O maior regulamento real da Livelo (484 caracteres) não pode ser
+    tocado — o limite precisa ter folga sobre o que já existe hoje.
+    """
+    texto_484 = "Campanha válida de 12 a 17/08/2026. " + "Ganhe pontos em compras selecionadas. " * 11
+    assert len(texto_484) <= 484
+
+    texto = montar_mensagem(
+        _promocao(regulamento_texto=texto_484), _classificacao(), "AVANCADO",
+    )
+    assert texto_484 in texto
+    assert "regulamento completo" not in texto.lower()
+
+
+# --- tópicos pré-determinados --------------------------------------------------
+#
+# Pontuação, Validade e Cupom viram tópicos rotulados porque já são dado limpo
+# — vêm de campo próprio, não de texto livre. Escopo fica de fora de propósito:
+# não existe campo para isso, e extrair de texto livre por regex arriscaria
+# rotular "sem restrição" numa oferta que na verdade tem uma — pior que não
+# ter o tópico. Ver a conversa que resolveu isso: o regulamento truncado
+# continua sendo a fonte crua de reserva, nunca rotulado como Escopo.
+
+def test_topico_pontuacao_aparece_rotulado():
+    texto = montar_mensagem(_promocao(pontuacao_e_teto=True), _classificacao(), "PUBLICO")
+    assert "Pontuação: até 10 pontos por R$ 1" in texto
+
+
+def test_topico_validade_so_aparece_quando_ha_data_fim():
+    from datetime import date
+    com_data = montar_mensagem(
+        _promocao(data_fim=date(2026, 8, 16)), _classificacao(), "PUBLICO"
+    )
+    assert "Validade: até 16/08" in com_data
+
+    sem_data = montar_mensagem(_promocao(data_fim=None), _classificacao(), "PUBLICO")
+    assert "Validade" not in sem_data
+
+
+def test_topico_cupom_aparece_rotulado():
+    texto = montar_mensagem(
+        _promocao(requer_cupom=True, cupom="LIVELO"), _classificacao(), "PUBLICO"
+    )
+    assert "Cupom: LIVELO" in texto
+
+
+def test_clube_e_base_se_juntam_ao_topico_pontuacao_no_avancado():
+    """Clube e "fora da campanha" são fatos sobre a mesma coisa — quanto a
+    oferta paga — e por isso vivem dentro do tópico Pontuação, não espalhados
+    em linhas soltas.
+    """
+    texto = montar_mensagem(
+        _promocao(pontuacao_clube=Decimal("15"), pontuacao_base=Decimal("2")),
+        _classificacao(), "AVANCADO",
+    )
+    linha_pontuacao = next(l for l in texto.splitlines() if l.startswith("💰"))
+    assert "15 pontos por R$ 1" in linha_pontuacao
+    assert "fora da campanha" in linha_pontuacao
+    assert "2 pontos por R$ 1" in linha_pontuacao
+
+
+def test_escopo_nunca_e_rotulado():
+    """Não existe fonte confiável para "escopo" (só texto livre inconsistente
+    por parceiro) — inventar o rótulo afirmaria uma leitura que o dado não
+    sustenta. Guarda de regressão: se alguém tentar adicionar de novo, este
+    teste avisa.
+    """
+    for tipo in ("PUBLICO", "AVANCADO"):
+        texto = montar_mensagem(_promocao(), _classificacao(), tipo)
+        assert "Escopo" not in texto
