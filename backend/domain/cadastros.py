@@ -83,11 +83,21 @@ class CategoriaOrigem(Base):
 
 
 class ParceiroCategoria(Base):
-    """N:N — a Livelo dá várias categorias ao mesmo parceiro."""
+    """N:N — a Livelo dá várias categorias ao mesmo parceiro.
+
+    `categoria_id` é a curadoria canônica **deste parceiro** neste slug —
+    não do slug em geral. Um slug largo como "casaedecoracao" mistura
+    parceiros de natureza bem diferente; a curadoria real mostrou isso
+    distribuindo um mesmo slug em até 7 categorias canônicas diferentes,
+    a depender do parceiro. Por isso o vínculo, não o slug
+    (`categorias_origem.categoria_id`), é o nível certo pra essa decisão.
+    Nulo até que alguém classifique; o motor cai no slug bruto até lá.
+    """
     __tablename__ = "parceiro_categorias"
 
     parceiro_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("parceiros.id"), primary_key=True)
     categoria_origem_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("categorias_origem.id"), primary_key=True)
+    categoria_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("categorias.id"), index=True)
 
 
 class Parceiro(Base):

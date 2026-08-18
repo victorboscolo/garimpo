@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.configuracoes_service import resolver_configuracao
@@ -119,12 +119,33 @@ class BaseComparacao:
 
 
 async def _valores_do_segmento(db: AsyncSession, categoria_origem_id, programa_id):
-    """Pontuações aprovadas de um segmento."""
+    """Pontuações aprovadas de um segmento bruto (nível de slug de origem).
+
+    Usado quando não há curadoria por parceiro — o fallback de sempre.
+    """
     stmt = (
         select(Promocao.pontuacao)
         .join(ParceiroCategoria, ParceiroCategoria.parceiro_id == Promocao.parceiro_id)
         .filter(
             ParceiroCategoria.categoria_origem_id == categoria_origem_id,
+            Promocao.programa_id == programa_id,
+            Promocao.status.in_(["APROVADA", "PUBLICADA"]),
+        )
+    )
+    return list((await db.execute(stmt)).scalars().all())
+
+
+async def _valores_da_categoria(db: AsyncSession, categoria_id, programa_id):
+    """Pontuações aprovadas de todo parceiro cuja categoria canônica efetiva
+    (curadoria por parceiro, com fallback pro padrão do slug de origem) é
+    esta — dentro do mesmo programa, nunca misturando Livelo com Esfera.
+    """
+    stmt = (
+        select(Promocao.pontuacao)
+        .join(ParceiroCategoria, ParceiroCategoria.parceiro_id == Promocao.parceiro_id)
+        .join(CategoriaOrigem, CategoriaOrigem.id == ParceiroCategoria.categoria_origem_id)
+        .filter(
+            func.coalesce(ParceiroCategoria.categoria_id, CategoriaOrigem.categoria_id) == categoria_id,
             Promocao.programa_id == programa_id,
             Promocao.status.in_(["APROVADA", "PUBLICADA"]),
         )
@@ -178,31 +199,40 @@ async def obter_base_comparacao(
             distribuicao=[pontuacao for pontuacao, _ in familia.amostras],
         )
 
-    # Categorias do parceiro, com o volume aprovado de cada uma.
+    # Vínculos do parceiro (não só o slug — precisa da curadoria por parceiro
+    # também, que mora no vínculo, não no slug).
     vinculos = (await db.execute(
-        select(ParceiroCategoria.categoria_origem_id).filter_by(parceiro_id=parceiro_id)
+        select(ParceiroCategoria).filter_by(parceiro_id=parceiro_id)
     )).scalars().all()
 
     candidatos = []
-    por_id = {}
-    for categoria_origem_id in vinculos:
-        total = len(await _valores_do_segmento(db, categoria_origem_id, programa_id))
-        origem = await db.get(CategoriaOrigem, categoria_origem_id)
+    fonte_por_rotulo = {}  # rotulo -> ("categoria", categoria_id) | ("origem", categoria_origem_id)
+    for vinculo in vinculos:
+        origem = await db.get(CategoriaOrigem, vinculo.categoria_origem_id)
         if origem is None:
             continue
-        # O agrupamento canônico, quando existir, é o rótulo preferido: é a
-        # decisão de curadoria sobrepondo-se ao vocabulário bruto da fonte.
-        rotulo = origem.slug
-        if origem.categoria_id is not None:
-            canonica = await db.get(Categoria, origem.categoria_id)
+        # A curadoria por parceiro vence; na ausência dela, cai pro padrão do
+        # slug (`categorias_origem.categoria_id`, hoje sem uso); sem nenhuma
+        # das duas, usa o slug bruto — o comportamento de sempre.
+        categoria_efetiva_id = vinculo.categoria_id or origem.categoria_id
+        if categoria_efetiva_id is not None:
+            canonica = await db.get(Categoria, categoria_efetiva_id)
             if canonica is not None:
-                rotulo = canonica.nome
-        candidatos.append((rotulo, total))
-        por_id[rotulo] = categoria_origem_id
+                total = len(await _valores_da_categoria(db, categoria_efetiva_id, programa_id))
+                candidatos.append((canonica.nome, total))
+                fonte_por_rotulo[canonica.nome] = ("categoria", categoria_efetiva_id)
+                continue
+        total = len(await _valores_do_segmento(db, origem.id, programa_id))
+        candidatos.append((origem.slug, total))
+        fonte_por_rotulo[origem.slug] = ("origem", origem.id)
 
     escolhido = escolher_segmento(candidatos, minimo=minimo_segmento)
     if escolhido is not None:
-        valores = await _valores_do_segmento(db, por_id[escolhido], programa_id)
+        tipo, id_escolhido = fonte_por_rotulo[escolhido]
+        if tipo == "categoria":
+            valores = await _valores_da_categoria(db, id_escolhido, programa_id)
+        else:
+            valores = await _valores_do_segmento(db, id_escolhido, programa_id)
         media = Decimal(str(sum(valores) / len(valores))) if valores else None
         return BaseComparacao(
             media_ponderada=media, total=len(valores), nivel="SEGMENTO",
