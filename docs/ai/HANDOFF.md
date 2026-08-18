@@ -1,10 +1,9 @@
 # Handoff para Claude Code
 
-> Revisado em 17/08/2026, ao fim da sessão que trouxe o segundo programa
-> (Esfera) ao ar. Os números aqui foram conferidos contra o banco na escrita,
-> não reconstruídos de memória. A seção 12 lista as afirmações de handoffs
-> anteriores que se provaram falsas — vale ler antes de confiar em qualquer
-> documento mais antigo.
+> Revisado em 18/08/2026, ao fim de uma sessão de dois dias. Os números aqui
+> foram conferidos contra o banco na escrita, não reconstruídos de memória. A
+> seção 12 lista as afirmações de handoffs anteriores que se provaram falsas —
+> vale ler antes de confiar em qualquer documento mais antigo.
 
 ## 1. Resumo executivo
 
@@ -13,32 +12,34 @@ programas de fidelidade (**Livelo e Esfera**, desde 17/08/2026), calcula uma
 nota e categoria de atratividade por um motor de regras determinístico (não é
 LLM) e expõe tudo para revisão humana antes de qualquer divulgação. Existe um
 segundo produto planejado, **Garimpo Emissões** (passagens aéreas via milhas),
-fora do escopo atual, mas cuja arquitetura já foi antecipada nas tabelas
-polimórficas (`classificacoes`, `arquivos` e `publicacoes` usam `entidade_tipo`
-+ `entidade_id` sem FK nativa, para servirem aos dois domínios).
+**investigado nesta sessão mas ainda fora do escopo de implementação** — seção
+5 tem o mapa completo do que é viável e o que não é.
 
 **Estágio atual**: MVP funcional de ponta a ponta rodando localmente no Mac do
-usuário, agora com dois programas de fidelidade coletando em paralelo. Coleta
-real diária de ambos, motor calibrado com dados reais, banco, API e painel de
-revisão estão implementados e em uso. O repositório tem controle de versão (36
-commits — **mais o trabalho desta sessão, ainda não commitado**: veja
-`git status`) e 122 testes automatizados.
+usuário, dois programas de fidelidade coletando em paralelo, automaticamente,
+sem intervenção diária. Motor calibrado com dados reais, banco, API e painel
+de revisão estão implementados e em uso. 41 commits, 78 testes automatizados
+(backend) + 9 (coletor Esfera) + os do coletor Livelo.
 
-**O que mudou na sessão de 17/08**, em três frentes:
+**O que mudou na sessão de 17–18/08**, em quatro frentes:
 
-- **Esfera no ar**: segundo programa de fidelidade, coletado por uma API
-  pública que a própria Esfera expõe sem proteção alguma — nem cookie, nem
-  anti-robô, nem sessão. Ao contrário da Livelo, o coletor é Python simples
-  (`httpx`, sem Playwright). 168 parceiros coletados, classificados e já
-  aprovados pelo usuário; nenhum publicado ainda, o que é esperado (seção 5).
-- **Mensagens reorganizadas**: o nome do programa agora aparece (essencial com
-  dois programas no mesmo canal), os fatos viraram tópicos rotulados
-  (Pontuação, Validade, Cupom), e o regulamento — que na Esfera chega a 10x
-  maior que na Livelo — é truncado por tamanho quando passa de 500 caracteres,
-  sempre com o link completo logo abaixo.
-- **Fila de publicação**: ganhou descarte explícito (paralelo a
-  aprovar/rejeitar) e reprocessamento automático das classificações ao fim da
-  aprovação em lote, para a fila nunca publicar nota desatualizada.
+- **Esfera no ar e publicando**: segundo programa de fidelidade, coletado por
+  uma API pública sem proteção alguma. 176 aprovadas, primeiro lote publicado
+  no Telegram (49 mensagens no total, Livelo + Esfera).
+- **Categoria canônica movida do slug para o parceiro**: curadoria manual real
+  de 423 parceiros mostrou que um slug de origem largo ("casaedecoracao")
+  reúne parceiros de natureza bem diferente — a decisão de categoria precisa
+  viver no vínculo parceiro↔slug, não no slug. Migration 0008; 14 categorias,
+  669 vínculos classificados, cobertura de 100%. Ver seção 5.
+- **Mensagens reorganizadas**: nome do programa, tópicos rotulados
+  (Pontuação, Validade, Cupom), regulamento truncado por tamanho. E um bug
+  real corrigido: a detecção de "regulamento real" só reconhecia a frase da
+  Livelo, escondendo o bloco de regulamento em **100% dos cards da Esfera**
+  no painel mesmo quando o dado existia.
+- **Garimpo Emissões investigado a fundo, sem código de produção**: testadas
+  Smiles, LATAM Pass e Azul/TudoAzul diretamente, mais a API do seats.aero
+  como alternativa. Resultado: só a Azul é viável por conta própria hoje;
+  Smiles e LATAM estão fechadas. Mapa completo na seção 5.
 
 ## 2. Escopo atual e limites
 
@@ -78,8 +79,8 @@ commits — **mais o trabalho desta sessão, ainda não commitado**: veja
 
 | Componente | Status | Observação |
 |---|---|---|
-| Controle de versão | IMPLEMENTADO | 36 commits; trabalho desta sessão ainda não commitado (`git status`); `.gitignore` cobre `.env`, `venv/`, logs, `.pytest_cache` |
-| Modelo de dados | IMPLEMENTADO | 18 tabelas, migrations 0001–0007 aplicadas |
+| Controle de versão | IMPLEMENTADO | 41 commits, working tree limpo; `.gitignore` cobre `.env`, `venv/`, logs, `.pytest_cache` |
+| Modelo de dados | IMPLEMENTADO | 18 tabelas, migrations 0001–0008 aplicadas |
 | Motor de Análise V1 | IMPLEMENTADO | 6 pilares; comparativos por percentil, escopados por programa; base em cascata (família → segmento → mercado) |
 | Coletor Livelo nativo (macOS) | IMPLEMENTADO | lê o JSON estruturado da listagem; parsing de texto como fallback; 41 testes |
 | Coletor Livelo em Docker | ABANDONADO | bloqueado por anti-robô (HTTP 403); não usar |
@@ -87,22 +88,19 @@ commits — **mais o trabalho desta sessão, ainda não commitado**: veja
 | Agendamento (`launchd`) | IMPLEMENTADO | Livelo 10:05, Esfera 10:20, recalibração semanal seg. 11h; só roda com o Mac ligado |
 | API (FastAPI) | IMPLEMENTADO | listagem ordenada, aprovação/rejeição individual e em lote, ingestão, reclassificação |
 | Painel admin | IMPLEMENTADO | triagem por nota, ações em lote, critérios do motor, regulamento e selos; fila de publicação com descarte |
-| Testes automatizados | PARCIAL | 72 backend + 41 coletor Livelo + 9 coletor Esfera, todos de lógica pura; nada de API/banco |
+| Testes automatizados | PARCIAL | 78 backend + 41 coletor Livelo + 9 coletor Esfera, todos de lógica pura; nada de API/banco |
 | Publicação (Telegram) | IMPLEMENTADO | fila com curadoria, prévia, envio em lote, descarte, diagnóstico e aviso de divergência; mensagem por tópicos, com nome do programa |
 | Autenticação | PENDENTE | ver seção 8 |
 
-**Dados no banco (17/08/2026):**
+**Dados no banco (18/08/2026):**
 
 | | |
 |---|---|
-| Promoções | 537 — 533 aprovadas (365 Livelo + 168 Esfera), 4 rejeitadas, 0 pendentes |
-| Parceiros | 423 (255 Livelo + 168 Esfera — mesma marca em programas diferentes ainda vira `Parceiro` separado, seção 2) |
-| Categorias de origem / vínculos | 65 / 669, em 2 programas |
-| Publicadas no Telegram | 40, todas AVANCADO. **Nenhuma da Esfera ainda** — esperado, ver seção 5 |
-
-**Distribuição das notas (Esfera, recém-aprovada):** Pouco atrativa 58, Comum
-58, Boa 47, Excelente 4, Excepcional 1 — já diferenciando, não mais achatada em
-50/65 como no primeiro dia (seção 5).
+| Promoções | 561 — 380 aprovadas Livelo + 5 rejeitadas Livelo + 176 aprovadas Esfera, 0 pendentes |
+| Parceiros | 423 (mesma marca em programas diferentes ainda vira `Parceiro` separado, seção 2 — inclui 1 bug pequeno conhecido: "Bankei" duplicado por `codigo_externo` gravado com caixa diferente, "ban" vs "BAN", não corrigido) |
+| Categorias de origem / vínculos | 65 slugs / 669 vínculos, em 2 programas |
+| Categorias canônicas | 15 (8 originais + 7 criadas na curadoria: Beleza, Infantil, Pet, Presentes, Seguros e Consórcios, Serviços, Varejo). **669 de 669 vínculos classificados — cobertura de 100%**, curadoria manual completa (seção 5) |
+| Publicadas no Telegram | 49, todas AVANCADO (Livelo + Esfera). Canal PUBLICO segue sem ID configurado |
 
 As faixas foram recalibradas junto com a mudança para percentil: como a nota
 passou a medir posição no mercado, as faixas marcam posição também —
@@ -315,6 +313,28 @@ universal (`new02163`, presente nos 168 parceiros — equivalente ao "todos" da
 Livelo) e mantém o resto sem julgar qual é canônica; isso é curadoria
 posterior, como já era para a Livelo.
 
+### Categoria canônica por parceiro, não por slug (18/08)
+
+A curadoria manual de 423 parceiros (planilha preenchida pelo usuário,
+423 linhas, aplicada em 18/08) revelou que `categorias_origem.categoria_id`
+(a decisão da seção anterior) não sustenta a realidade: um slug de origem
+largo como `casaedecoracao` (Livelo, 27 parceiros) reúne desde Electrolux até
+Riachuelo, e a curadoria real distribuiu esse slug sozinho em **7 categorias
+canônicas diferentes**, a depender do parceiro. Guardar a categoria no slug
+faria a decisão de um parceiro vencer a de outro que só por acaso compartilha
+o mesmo slug bruto.
+
+Migration 0008 move o campo para `parceiro_categorias.categoria_id` — o
+vínculo parceiro↔slug, não o slug sozinho. `categorias_origem.categoria_id`
+não foi removido (fica como fallback de nível de slug, hoje sem uso — 0 de
+65 preenchidos). A cascata de segmento em `motor/historico.py` resolve pela
+categoria do parceiro quando existe, com fallback pro slug bruto quando não
+há curadoria — comportamento antigo preservado onde não há dado novo.
+
+Confirmado após aplicar: Midea (Livelo, slug `casaedecoracao`) agora compara
+com o segmento "Eletrônicos" (32 ofertas), não mais com um segmento que
+misturava eletrônico, casa, moda e mercado por acidente de slug.
+
 ### Arranque a frio de um programa novo — resolvido pelo fluxo existente, sem código novo
 
 Sem histórico próprio nem mercado formado, os pilares Histórico e Atratividade
@@ -351,6 +371,83 @@ Com dois programas publicando no mesmo canal, três ajustes em
    espaço e acrescenta "(regulamento completo no link abaixo)" — nunca julga
    *o quê* é útil, só limita *quanto* cabe na mensagem. O texto integral
    continua salvo no banco e a um clique, no link que toda mensagem já traz.
+
+### Bug: detecção de "regulamento real" reconhecia só a frase da Livelo
+
+`_tem_regulamento_real` (`ingestao_service.py`) e sua cópia em JS no painel
+verificavam a presença da frase "campanha válida" — específica da Livelo —
+para distinguir regulamento de verdade do placeholder que o coletor antigo
+gravava ("Coletado do site oficial..."). A Esfera nunca usa essa frase: **0
+dos 168 regulamentos reais dela contêm isso**. Efeito prático: o bloco de
+regulamento em destaque **nunca aparecia em nenhum card da Esfera no
+painel**, mesmo com regulamento completo salvo; e o backend reescrevia à toa
+o campo em toda coleta duplicada da Esfera, achando que o dado salvo "não era
+real".
+
+Corrigido invertendo a lógica: só não é real quando bate o padrão do
+placeholder antigo (`PADRAO_FRASE_DO_COLETOR`, já existia em
+`condicoes.py`), não quando falta uma frase de uma fonte específica. Depois
+do fix: bloco de regulamento passou a aparecer em 287 das 364 promoções da
+Livelo (era 73) e nas 167 da Esfera (era 0).
+
+### Garimpo Emissões — investigação de viabilidade (Smiles, LATAM, Azul, seats.aero)
+
+Nenhum código de produção foi escrito; isto documenta o que foi aprendido
+testando as três companhias diretamente e uma alternativa comercial, pra não
+repetir a investigação do zero numa sessão futura.
+
+**O problema é estruturalmente diferente de Promoções.** Livelo e Esfera são
+catálogo: uma lista relativamente estável, coletada 1x/dia. Busca de milhas é
+consulta sob demanda — depende de origem, destino e data; não existe "lista
+de hoje" pra baixar de manhã. Isso muda o modelo de coleta inteiro, não é só
+"mais um programa".
+
+| Programa | Situação | Detalhe |
+|---|---|---|
+| **Smiles (GOL)** | **Fechada, sem caminho técnico conhecido** | Akamai Bot Manager bloqueia até dentro de navegador real e visível — o mesmo truque que resolve a Livelo não resolve aqui. `curl` puro: HTTP 406. Dentro do navegador: erro de CORS + HTTP 452 na chamada de busca (`api-air-flightsearch-green.smiles.com.br`), reproduzido em sessão nova, sem carga acumulada de outros testes |
+| **LATAM Pass** | **Fechada por autenticação, não por técnica** | Exige login pessoal antes de buscar com milhas — não é proteção anti-robô, é barreira de acesso deliberada. Decisão: não automatizar login em nome do usuário, mesmo com credencial fornecida por ele — contornaria a mesma premissa de nunca contornar controle de acesso (seção 2). API oficial de desenvolvedor (`developers.latam-pass.latam.com`) existe mas é pra parceiro comercial formal resgatar produto de catálogo pré-definido (ex: iPad, PlayStation), não busca de voo |
+| **Azul/TudoAzul** | **Viável, testada e mapeada** | Busca funciona sem login. Protegida por Akamai na borda (bloqueia `curl` puro, HTTP 403), mas passa dentro de navegador real. Achado chave: **a primeira busca da sessão precisa vir de navegação normal** (carregar a home, passar pelo formulário) — depois disso, buscas por URL direta funcionam encadeadas. Teto observado: por volta de 10 buscas encadeadas por sessão aquecida (não é número fixo, variou entre testes); a partir daí, reaquecer (nova navegação normal) recupera **instantaneamente**, sem esperar. Trocar de rota no meio da sessão não piora nada — mesmo comportamento de só mudar data. Dado real coletado: preço em pontos varia até 3x pra mesma rota em poucos dias (VCP→MCO: 213k a 613k pontos) |
+
+**Endpoints reais encontrados** (documentados, não implementados):
+- Smiles: `api-air-flightsearch-green.smiles.com.br/v1/airlines/search`
+- LATAM: `www.latamairlines.com/bff/web-products-searchbox/v1/calendar` (calendário de tarifa **em dinheiro**, não muda pra pontos mesmo com "usar milhas" marcado — não serve pra Emissões)
+- Azul: `b2c-api.voeazul.com.br/tudoAzulReservationAvailability/api/tudoazul/reservation/availability/v6/availability`, e a entrega de resultado passa por um canal de "Listen" do Google Firestore (`firestore.googleapis.com/.../azul-storage-prd`), não uma API REST convencional
+
+**Alternativa investigada: API do seats.aero.** Agregador comercial
+(`seats.aero`) que já faz esse scraping em escala — cobre GOL Smiles e
+Azul/TudoAzul, mas **confirmado que não cobre LATAM Pass** (nem ele, nem o
+concorrente AwardFares — nenhuma ferramenta comercial do mercado resolveu
+LATAM Pass ainda). Usar a API deles eliminaria toda a complexidade de sessão
+da Azul e destravaria a Smiles, que não tem alternativa própria. Restrições
+relevantes dos termos deles: atribuição visível obrigatória em qualquer
+lugar que mostre o dado; uso automatizado só pra fins não-comerciais sem
+permissão por escrito ("Commercial Purpose" é definido de forma ampla —
+inclui afiliação com entidade que gera receita); voos além de 60 dias não
+podem ser mostrados publicamente sem OAuth ou acordo comercial. Conta Pro do
+usuário já existe, mas **não é elegível pra API automaticamente** — pedido
+de elegibilidade enviado ao suporte deles em 18/08, resposta pendente.
+
+**Achado de segurança/legal, não só técnico**: a Air Canada processa o
+Seats.aero alegando que scraping automatizado de disponibilidade de prêmio é
+fraude computacional (linguagem de CFAA); o Seats.aero se defende como
+concorrência legítima. É litígio real e em andamento — motivo a mais pra não
+construir scraping próprio de Smiles/LATAM como se fosse trivial, mesmo
+quando tecnicamente possível.
+
+**Monitoramento automático criado**: rotina mensal (`trig_01VNZZmfuWBgzaA6QcRU3BB7`,
+todo dia 1º) verifica se seats.aero ou AwardFares passaram a suportar LATAM
+Pass; só notifica se algo mudar.
+
+**Decisão de produto pra quando (se) a coleta de Emissões avançar**: sem
+nota automática por enquanto — o sistema não tem histórico suficiente pra
+calibrar isso, e o usuário tem anos de experiência pessoal em milhas que vale
+mais que qualquer heurística nova. Aprovação manual mostraria um texto padrão
+("Excelente oportunidade"), sem expor a mecânica por trás — mesmo princípio
+de sempre, nota é interna. Discutido também: separar sinal de "queda de
+preço ao longo do tempo" (a mesma rota fica mais barata) do sinal de "valor
+por milha" (preço em milhas vs. preço em dinheiro do mesmo voo) — são coisas
+diferentes, o segundo exige também coletar o preço em dinheiro do mesmo voo,
+não feito ainda.
 
 ### Exceção à imutabilidade
 
@@ -416,10 +513,10 @@ backend/
                    #   motor/ (pilares, historico, segmento, percentil, servico)
   infrastructure/  # db/ e telegram/cliente.py (só envia; lê o token do .env)
   domain/          # modelos SQLAlchemy
-  migrations/      # Alembic (0001–0007)
+  migrations/      # Alembic (0001–0008)
   scripts_backfill/# backfills pontuais, com dry-run
   static/admin/    # painel
-  tests/           # 72 testes de lógica pura
+  tests/           # 78 testes de lógica pura
 coletor-nativo/    # coletor Livelo, roda fora do Docker (bloqueio anti-robô), venv próprio
   coletor_livelo_nativo.py # orquestra a coleta; fallback de texto
   parceiros_json.py        # lê o JSON estruturado da página (caminho principal)
@@ -466,25 +563,38 @@ defasada ele some do container. `docker compose build backend` resolve.
 | Aprovação individual não reclassifica | Consistência | Médio | Só `aprovar-lote` chama `reclassificar_todas`; aprovar uma por uma deixa a fila com nota potencialmente desatualizada até a próxima recalibração ou lote. Decisão em aberto, perguntada ao usuário e ainda sem resposta: reclassificar a cada aprovação individual (mais correto, mais lento) ou só avisar na aba Publicar quando houver aprovação mais recente que a última classificação |
 | `aprovada_por` nulo | Auditoria | Baixo hoje | Depende de haver usuários; importa quando houver mais de um revisor |
 | Poucos parceiros com histórico próprio | Limitação temporária | Médio | Vale para os dois programas, mais agudo na Esfera (começou do zero em 17/08); a cascata por segmento cobre enquanto amadurece |
-| Agrupamento canônico vazio | Curadoria | Baixo | `categorias_origem.categoria_id` nulo nos 65 slugs (2 programas); preencher reduz os agrupadores sem recoletar |
 | Esfera sem pontuação-base nem datas de campanha | Limitação de fonte | Médio | A API da Esfera não expõe campo limpo pra isso (seção 5); mensagens da Esfera não trazem "🗓 Validade" nem "📉 fora da campanha" até a fonte mudar |
 | Coletor depende do Mac ligado | Operacional | Médio | Vale pros dois coletores agora, não só a Livelo; coleta diária pode falhar em silêncio, não há monitoramento |
-| Sem teste de API/banco | Qualidade | Médio | Vários bugs de sessões anteriores (MissingGreenlet, MultipleResultsFound, fuso na validade, canal não configurado bloqueando o lote) só apareceram em execução real |
+| Sem teste de API/banco | Qualidade | Médio | Vários bugs de sessões anteriores (MissingGreenlet, MultipleResultsFound, fuso na validade, canal não configurado bloqueando o lote, detecção de regulamento restrita à Livelo) só apareceram em execução real |
 | Rejeitadas com classificação velha | Consistência | Baixo | `reclassificar-todas` pula REJEITADAS por desenho |
 | Canal PUBLICO sem ID | Configuração | Baixo | Só o AVANCADO existe; a fila ignora canais não configurados |
 | Comparação entre programas (mesma marca, Livelo vs Esfera) | Produto | Baixo | Registrada como possibilidade (seção 2), não como tarefa — falta decidir critério de correspondência entre `Parceiro`s |
 | Horário de atualização dos programas | Premissa | Baixo | Observar empiricamente, pros dois |
+| "Bankei" duplicado (Livelo) | Qualidade de dado | Baixo | Dois `Parceiro` pro mesmo negócio — `codigo_externo` gravado como "ban" numa coleta e "BAN" noutra (case-sensitive onde não devia). Achado durante a curadoria de categoria; não corrigido, afeta só esse um parceiro |
+| seats.aero — elegibilidade de API pendente | Bloqueio externo | Médio | Pedido enviado em 18/08 (conta Pro já existe, mas API não é automática); cobriria Smiles + Azul de uma vez se aprovado. Ver seção 5 |
+| LATAM Pass sem suporte em nenhuma ferramenta do mercado | Limitação externa | Baixo | Nem seats.aero nem AwardFares cobrem; rotina mensal automática (seção 5) avisa se isso mudar — não precisa checagem manual |
 
 ## 9. Próximas tarefas recomendadas
 
 ### Tarefa A — Acompanhar a validação da Esfera
-168 parceiros da Esfera foram coletados, classificados e aprovados nesta
-sessão, mas **nada foi publicado ainda** — decisão deliberada do usuário
-("coletar e classificar, não publicar ainda"). Publicar o primeiro lote e
-recolher o retorno de quem valida é o próximo passo natural, no ritmo que o
-usuário decidir.
+O primeiro lote da Esfera já foi publicado (49 mensagens no total, Livelo +
+Esfera, todas AVANCADO). Ainda não há retorno registrado de quem valida
+especificamente sobre a Esfera, do jeito que houve pra Livelo — vale
+perguntar, é o insumo que falta pra saber se a régua está calibrada pro
+segundo programa.
 
-### Tarefa B — Histórico na tela (desenho aprovado, não implementado)
+### Tarefa B — Retomar Garimpo Emissões quando o seats.aero responder
+Investigação completa na seção 5. Se a API for aprovada: cobre Smiles e Azul
+de uma vez, elimina a complexidade de sessão que a Azul exige sozinha —
+tratar como caminho principal, guardando o que foi aprendido sobre a Azul
+como plano B. Se não for aprovada, ou demorar: a Azul sozinha já tem
+arquitetura mapeada (aquecer sessão, lotes de ~8 buscas, reaquecer) pra
+começar um coletor próprio. Duas decisões de produto ainda em aberto antes de
+qualquer código: como guardar histórico de preço ao longo do tempo (pra
+sinal de "queda de preço") e como exibir isso pro usuário sem nota
+automática (seção 5).
+
+### Tarefa C — Histórico na tela (desenho aprovado, não implementado)
 Duas seções novas dentro do "Ver detalhes" que já existe, carregadas **sob
 demanda** ao expandir o card, para não voltar a fazer centenas de requisições no
 carregamento:
@@ -495,27 +605,28 @@ carregamento:
 
 Não precisa de endpoint novo nem migration — é trabalho só de tela.
 
-### Tarefa C — Teste de API e banco
+### Tarefa D — Teste de API e banco
 Várias falhas caras de sessões anteriores passaram por toda a suíte de lógica
 pura e só apareceram rodando o sistema de verdade. Montar pytest-asyncio com
 banco de teste fecharia essa lacuna.
 
-### Tarefa D — Decidir o gancho de reclassificação na aprovação individual
+### Tarefa E — Decidir o gancho de reclassificação na aprovação individual
 Ver a pendência na seção 8. Pergunta feita ao usuário, sem resposta ainda —
 não escolher um caminho sem essa confirmação.
 
 ## 10. Roteiro da próxima sessão
 
 1. Ler este arquivo por completo.
-2. Conferir o estado real antes de agir: `git log --oneline`, `git status`
-   (**há trabalho desta sessão ainda não commitado**), `docker compose ps`,
-   contagem por status/programa em `promocoes`. **Os números da seção 3 são de
-   17/08 e envelhecem a cada coleta diária.**
-3. Conferir se as coletas automáticas (10:05 Livelo, 10:20 Esfera) rodaram e
+2. Conferir o estado real antes de agir: `git log --oneline`, `git status`,
+   `docker compose ps`, contagem por status/programa em `promocoes`. **Os
+   números da seção 3 são de 18/08 e envelhecem a cada coleta diária.**
+3. Checar se o seats.aero respondeu o pedido de elegibilidade de API (seção
+   5) — muda o próximo passo de Emissões inteiro.
+4. Conferir se as coletas automáticas (10:05 Livelo, 10:20 Esfera) rodaram e
    quantos registros cada uma criou. Esperado: poucos por dia (dedup por
    hash); uma centena de repente indicaria hash invalidado (seção 5).
-4. Perguntar ao usuário a prioridade antes de escolher tarefa.
-5. Não alterar arquivos sem aprovação explícita.
+5. Perguntar ao usuário a prioridade antes de escolher tarefa.
+6. Não alterar arquivos sem aprovação explícita.
 
 ## 11. Leitura prioritária
 
@@ -524,7 +635,9 @@ não escolher um caminho sem essa confirmação.
    exceção à imutabilidade. É o coração das regras, vale pros dois programas.
 3. `backend/application/condicoes.py` — como se decide "condicionada" e o
    alcance no marketplace.
-4. `backend/application/motor/pilares.py` e `servico.py` — os 6 critérios.
+4. `backend/application/motor/pilares.py`, `servico.py` e `historico.py` — os
+   6 critérios e a cascata de comparação, que agora resolve categoria por
+   parceiro (18/08), não por slug.
 5. `backend/application/telegram/mensagens.py` — tópicos, truncamento do
    regulamento, por que "Escopo" não existe como campo.
 6. `coletor-nativo/coletor_livelo_nativo.py` — ler os comentários do topo antes
