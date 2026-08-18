@@ -537,6 +537,14 @@ const CATEGORIA_INFO = {
   POUCO_ATRATIVA:  { label: "❌ Pouco atrativa",   cor: "pouco" },
 };
 
+const STATUS_LABEL = {
+  PENDENTE: "Pendente", APROVADA: "Aprovada", REJEITADA: "Rejeitada", PUBLICADA: "Publicada",
+};
+
+// Preenchido a cada `carregar()`, para os painéis de histórico (abertos sob
+// demanda) acharem parceiro_id sem precisar de uma requisição extra só pra isso.
+const promocoesCache = {};
+
 document.querySelectorAll(".tab").forEach(tab => {
   tab.addEventListener("click", () => {
     document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
@@ -601,6 +609,7 @@ async function carregar() {
   document.getElementById("selecionar-tudo").checked = false;
 
   for (const p of promocoes) {
+    promocoesCache[p.id] = p;
     const selecionavel = p.status === "PENDENTE";
     const card = document.createElement("div");
     card.className = selecionavel ? "card" : "card sem-selecao";
@@ -973,8 +982,20 @@ function renderDetalhes(p) {
     ).join("");
   }
 
+  // As duas seções abaixo só carregam quando o card é aberto (ver
+  // `alternarDetalhes`) — abrir todas de cara faria duas requisições por
+  // promoção da lista inteira, a maioria delas nunca vista pelo validador.
+  html += `<h4>Histórico da nota</h4>
+    <div class="sem-dados" id="historico-nota-${p.id}">Carregando…</div>`;
+  html += `<h4>Ofertas anteriores do parceiro</h4>
+    <div class="sem-dados" id="historico-parceiro-${p.id}">Carregando…</div>`;
+
   return html;
 }
+
+// Ids cujo histórico já foi buscado — abrir/fechar/reabrir o mesmo card não
+// deve refazer as requisições.
+const historicoCarregado = new Set();
 
 function alternarDetalhes(id) {
   const painel = document.getElementById(`det-${id}`);
@@ -982,6 +1003,76 @@ function alternarDetalhes(id) {
   const abrindo = painel.classList.contains("oculto");
   painel.classList.toggle("oculto");
   botao.textContent = abrindo ? "▾ Ocultar detalhes" : "▸ Ver detalhes";
+
+  if (abrindo && !historicoCarregado.has(id)) {
+    historicoCarregado.add(id);
+    carregarHistoricoNota(id);
+    carregarHistoricoParceiro(id);
+  }
+}
+
+async function carregarHistoricoNota(id) {
+  const alvo = document.getElementById(`historico-nota-${id}`);
+  try {
+    const resp = await fetch(`${API_BASE}/${id}/classificacoes`);
+    const classificacoes = await resp.json();
+    alvo.outerHTML = renderHistoricoNota(id, classificacoes);
+  } catch (e) {
+    alvo.textContent = "Não foi possível carregar o histórico da nota.";
+  }
+}
+
+function renderHistoricoNota(id, classificacoes) {
+  if (!classificacoes || classificacoes.length <= 1) {
+    return `<div class="sem-dados" id="historico-nota-${id}">Classificada uma única vez até agora, ainda sem reprocessamento.</div>`;
+  }
+  const linhas = classificacoes.map(c => {
+    const info = CATEGORIA_INFO[c.categoria] || { label: c.categoria };
+    return `<div class="campo">
+      <span class="rotulo">${formatData(c.processada_em)}${c.ativa ? " (atual)" : ""}:</span>
+      <span class="valor">${Number(c.nota).toFixed(1)} · ${esc(info.label)}</span>
+    </div>`;
+  }).join("");
+  return `<div id="historico-nota-${id}">${linhas}</div>`;
+}
+
+// Quantas ofertas anteriores mostrar antes de resumir o resto — um parceiro
+// coletado todo dia há meses não pode virar uma lista sem fim dentro do card.
+const LIMITE_HISTORICO_PARCEIRO = 15;
+
+async function carregarHistoricoParceiro(id) {
+  const alvo = document.getElementById(`historico-parceiro-${id}`);
+  const promocao = promocoesCache[id];
+  if (!promocao) return;
+  try {
+    const resp = await fetch(`${API_BASE}?parceiro_id=${promocao.parceiro_id}`);
+    const ofertas = (await resp.json())
+      .filter(o => o.id !== id)
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    alvo.outerHTML = renderHistoricoParceiro(id, ofertas);
+  } catch (e) {
+    alvo.textContent = "Não foi possível carregar o histórico do parceiro.";
+  }
+}
+
+function renderHistoricoParceiro(id, ofertas) {
+  if (ofertas.length === 0) {
+    return `<div class="sem-dados" id="historico-parceiro-${id}">Esta é a primeira oferta coletada deste parceiro.</div>`;
+  }
+  const mostrar = ofertas.slice(0, LIMITE_HISTORICO_PARCEIRO);
+  let linhas = mostrar.map(o => {
+    const nota = o.classificacao_ativa
+      ? `${Number(o.classificacao_ativa.nota).toFixed(1)} · ${esc((CATEGORIA_INFO[o.classificacao_ativa.categoria] || {}).label || o.classificacao_ativa.categoria)}`
+      : "sem classificação";
+    return `<div class="campo">
+      <span class="rotulo">${formatData(o.created_at)} (${esc(STATUS_LABEL[o.status] || o.status)}):</span>
+      <span class="valor">${Number(o.pontuacao)} ${esc(o.unidade_pontuacao)} — ${nota}</span>
+    </div>`;
+  }).join("");
+  if (ofertas.length > LIMITE_HISTORICO_PARCEIRO) {
+    linhas += `<div class="sem-dados">+ ${ofertas.length - LIMITE_HISTORICO_PARCEIRO} oferta(s) mais antiga(s) não exibida(s).</div>`;
+  }
+  return `<div id="historico-parceiro-${id}">${linhas}</div>`;
 }
 
 /* ---- Seleção e ações em lote ---- */
