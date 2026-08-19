@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.garimpo.backup</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/victor/Garimpo/garimpo-promocoes-v2/scripts/backup.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/victor/Garimpo/garimpo-promocoes-v2</string>
+
+    <!-- 10:40, depois das duas coletas (Livelo 10:05, Esfera 10:20) — o dump
+         do dia já sai com os dados frescos, não com os de ontem. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>10</integer>
+        <key>Minute</key>
+        <integer>40</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/victor/Garimpo/garimpo-promocoes-v2/scripts/backup.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/victor/Garimpo/garimpo-promocoes-v2/scripts/backup-erro.log</string>
+</dict>
+</plist>
