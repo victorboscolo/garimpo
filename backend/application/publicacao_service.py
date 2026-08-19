@@ -165,8 +165,9 @@ async def montar_fila(db, config: dict, tipo: str | None = None) -> list[dict]:
 # O Telegram limita mensagens a um mesmo destino em torno de 20 por minuto.
 # Sem pausa, um lote grande começa a receber recusa por excesso de velocidade no
 # meio do caminho — e o que se perde não é a mensagem, é a confiança de que a
-# fila foi enviada por inteiro.
-PAUSA_ENTRE_ENVIOS_SEGUNDOS = 3.5
+# fila foi enviada por inteiro. 30s é bem mais conservador que o mínimo exigido
+# pelo limite do Telegram — ajustado a pedido do usuário (18/08).
+PAUSA_ENTRE_ENVIOS_SEGUNDOS = 30
 
 
 def estimar_duracao(quantidade: int) -> float:

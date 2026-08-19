@@ -787,7 +787,7 @@ function atualizarBarraFila() {
   barra.classList.toggle("oculta", n === 0);
   // O Telegram limita o ritmo de mensagens a um mesmo canal: avisar o tempo
   // evita a impressão de travamento quando a leva é grande.
-  const minutos = Math.ceil((n - 1) * 3.5 / 60);
+  const minutos = Math.ceil((n - 1) * 30 / 60);
   const tempo = n > 1 ? ` · ~${minutos} min` : "";
   document.getElementById("contagem-lote").textContent =
     `${n} mensage${n === 1 ? "m" : "ns"} selecionada${n === 1 ? "" : "s"}${tempo}`;
@@ -885,7 +885,7 @@ async function publicarSelecionadas() {
   const itens = itensSelecionadosDaFila();
   if (itens.length === 0) return;
 
-  const minutos = Math.ceil((itens.length - 1) * 3.5 / 60);
+  const minutos = Math.ceil((itens.length - 1) * 30 / 60);
   const aviso = itens.length > 1 ? `\n\nVai levar cerca de ${minutos} minuto(s) — há uma pausa entre os envios para não esbarrar no limite do Telegram.` : "";
   if (!confirm(`Publicar ${itens.length} mensagem(ns) no Telegram?${aviso}\n\nNão há como despublicar depois.`)) return;
 
