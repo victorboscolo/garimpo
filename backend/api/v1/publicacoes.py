@@ -59,6 +59,20 @@ async def divergencias(db: AsyncSession = Depends(get_db)):
     return {"total": len(itens), "itens": itens}
 
 
+@router.get("/aviso-reclassificacao")
+async def aviso_reclassificacao(db: AsyncSession = Depends(get_db)):
+    """Há aprovação individual mais nova que a última reclassificação geral?
+
+    `/promocoes/{id}/aprovar` não reclassifica sozinho (decisão de custo — ver
+    `aprovacoes_apos_ultima_reclassificacao`); este aviso é o substituto: avisa
+    quem vai publicar que a nota de outras promoções pode estar desatualizada,
+    em vez de reclassificar a cada aprovação avulsa.
+    """
+    from application.divergencia import aprovacoes_apos_ultima_reclassificacao
+
+    return await aprovacoes_apos_ultima_reclassificacao(db)
+
+
 @router.get("/diagnostico")
 async def diagnostico(db: AsyncSession = Depends(get_db)):
     """Confere a configuração do Telegram sem publicar nada.

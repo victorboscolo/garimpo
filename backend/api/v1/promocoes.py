@@ -95,6 +95,11 @@ async def aprovar_promocao(
     # TODO: promocao.aprovada_por = usuario_id_do_token
     # TODO: disparar publicacao_service.publicar(promocao.id, tipo="PUBLICO") e tipo="AVANCADO"
 
+    # Decisão deliberada: não reclassifica aqui, ao contrário de aprovar-lote.
+    # Reclassificar a cada aprovação avulsa seria caro e ruidoso pra um fluxo
+    # que existe pra aprovar rápido, uma de cada vez. GET
+    # /publicacoes/aviso-reclassificacao avisa quem vai publicar quando isso
+    # deixou outras notas potencialmente desatualizadas.
     await db.commit()
     await db.refresh(promocao)
     return promocao

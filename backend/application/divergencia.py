@@ -26,6 +26,42 @@ def classificacao_vigente_em(classificacoes: list, momento):
     return max(anteriores, key=lambda c: c.processada_em)
 
 
+async def aprovacoes_apos_ultima_reclassificacao(db) -> dict:
+    """Aprovações individuais aconteceram depois da última reclassificação geral?
+
+    `aprovar-lote` reclassifica tudo depois de aprovar, porque lote já é raro e
+    o custo (~2s pra centenas de promoções) vale a pena de uma vez. Reclassificar
+    a cada aprovação avulsa em `/aprovar` seria caro e ruidoso pra um fluxo que
+    existe justamente pra aprovar rápido, uma de cada vez — decisão do usuário
+    foi avisar em vez de reclassificar sozinho.
+
+    Sinal usado: se a aprovação mais recente é mais nova que a reclassificação
+    mais recente, a nota de outras promoções pode não refletir essa aprovação
+    ainda (ela passou a valer como comparação para o segmento/mercado dela).
+    """
+    from sqlalchemy import func, select
+
+    from domain.motor import Classificacao
+    from domain.promocoes import Promocao
+
+    ultima_reclassificacao = (await db.execute(
+        select(func.max(Classificacao.processada_em))
+    )).scalar_one_or_none()
+
+    if ultima_reclassificacao is None:
+        return {"pendente": False, "quantidade": 0}
+
+    quantidade = (await db.execute(
+        select(func.count(Promocao.id)).filter(
+            Promocao.status == "APROVADA",
+            Promocao.aprovada_em.isnot(None),
+            Promocao.aprovada_em > ultima_reclassificacao,
+        )
+    )).scalar_one()
+
+    return {"pendente": quantidade > 0, "quantidade": quantidade}
+
+
 async def listar_divergencias(db) -> list[dict]:
     """Publicações cuja categoria mudou desde o envio."""
     from sqlalchemy import select

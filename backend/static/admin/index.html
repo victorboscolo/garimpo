@@ -687,6 +687,25 @@ async function carregarFila() {
     }
   } catch (e) { /* o aviso não pode impedir a fila de aparecer */ }
 
+  // Aprovação individual não reclassifica sozinha (decisão de custo — ver
+  // aprovar_promocao); este aviso é o substituto, avisando quando isso deixou
+  // a fila com nota potencialmente desatualizada.
+  try {
+    const aviso = await (await fetch("/api/v1/publicacoes/aviso-reclassificacao")).json();
+    if (aviso.pendente) {
+      const bloco = document.createElement("div");
+      bloco.className = "aviso-config";
+      bloco.innerHTML = `
+        <b>${aviso.quantidade} aprovação(ões) individual(is) aconteceram depois da última reclassificação geral.</b><br>
+        A nota de outras promoções pode não refletir essas aprovações ainda.
+        <div style="margin-top:8px">
+          <button onclick="reprocessarTodas()">🔁 Reprocessar tudo agora</button>
+        </div>
+      `;
+      lista.appendChild(bloco);
+    }
+  } catch (e) { /* o aviso não pode impedir a fila de aparecer */ }
+
   if (dados.total === 0) {
     lista.innerHTML = `<div class="empty-state"><div class="big">✅</div>Nada na fila. Aprove promoções para que apareçam aqui.</div>`;
     return;
