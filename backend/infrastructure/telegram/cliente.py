@@ -16,10 +16,14 @@ logger = logging.getLogger("garimpo.infrastructure.telegram")
 
 API_BASE = "https://api.telegram.org"
 
-# Um canal por tipo de publicação, como previsto no Cap. 6.
+# Um canal por tipo de publicação, como previsto no Cap. 6. ALERTA não é
+# publicação de promoção — é o DM do Painel de Saúde (application/saude_service.py)
+# pra avisar falha/atraso de job, propositalmente separado dos canais que
+# assinantes veem.
 VARIAVEL_DE_CANAL = {
     "PUBLICO": "TELEGRAM_CANAL_PUBLICO_ID",
     "AVANCADO": "TELEGRAM_CANAL_AVANCADO_ID",
+    "ALERTA": "TELEGRAM_CANAL_ALERTA_ID",
 }
 
 

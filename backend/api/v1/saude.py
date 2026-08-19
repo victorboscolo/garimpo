@@ -36,3 +36,11 @@ async def registrar_execucao(payload: ExecucaoIn, db: AsyncSession = Depends(get
 @router.get("/saude")
 async def saude(db: AsyncSession = Depends(get_db)):
     return {"jobs": await saude_service.obter_saude(db)}
+
+
+@router.post("/saude/verificar-atrasados")
+async def verificar_atrasados(db: AsyncSession = Depends(get_db)):
+    """Chamado periodicamente (scripts/verificar_saude.sh via launchd) — ver
+    o porquê em `saude_service.verificar_atrasados_e_alertar`.
+    """
+    return await saude_service.verificar_atrasados_e_alertar(db)

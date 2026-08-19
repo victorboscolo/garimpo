@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.garimpo.verificar-saude</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/victor/Garimpo/garimpo-promocoes-v2/scripts/verificar_saude.sh</string>
+    </array>
+
+    <!-- A cada 6h (não horário fixo de calendário): pega um job que passou
+         da janela de atraso (30h pros diários) em até 6h de atraso adicional,
+         sem gerar mais que 4 alertas por dia pra um mesmo problema contínuo. -->
+    <key>StartInterval</key>
+    <integer>21600</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/victor/Garimpo/garimpo-promocoes-v2/scripts/verificar-saude.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/victor/Garimpo/garimpo-promocoes-v2/scripts/verificar-saude-erro.log</string>
+</dict>
+</plist>
