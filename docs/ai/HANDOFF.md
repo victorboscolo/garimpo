@@ -1,6 +1,6 @@
 # Handoff para Claude Code
 
-> Revisado em 18/08/2026, ao fim de uma sessão de dois dias. Os números aqui
+> Revisado em 19/08/2026, ao fim de uma sessão de três dias. Os números aqui
 > foram conferidos contra o banco na escrita, não reconstruídos de memória. A
 > seção 12 lista as afirmações de handoffs anteriores que se provaram falsas —
 > vale ler antes de confiar em qualquer documento mais antigo.
@@ -18,13 +18,13 @@ segundo produto planejado, **Garimpo Emissões** (passagens aéreas via milhas),
 **Estágio atual**: MVP funcional de ponta a ponta rodando localmente no Mac do
 usuário, dois programas de fidelidade coletando em paralelo, automaticamente,
 sem intervenção diária. Motor calibrado com dados reais, banco, API e painel
-de revisão estão implementados e em uso. 50 commits, 97 testes automatizados
-(backend, 84 de lógica pura + 12 de integração API/banco + 1 smoke test de
+de revisão estão implementados e em uso. 55 commits, 103 testes automatizados
+(backend, 84 de lógica pura + 18 de integração API/banco + 1 smoke test de
 migration) + 43 coletor Livelo (41 + 2 do fix de caixa do `codigo_externo`) +
-9 coletor Esfera. Backup diário rodando de verdade pela primeira vez, e um
-Painel de Saúde mostra se cada job (coleta, recalibração, backup) está em dia.
+9 coletor Esfera. Backup diário rodando de verdade, e o Painel de Saúde agora
+avisa no Telegram sozinho quando um job falha ou atrasa — não só mostra na tela.
 
-**O que mudou na sessão de 17–18/08**, em dez frentes:
+**O que mudou na sessão de 17–19/08**, em onze frentes:
 
 - **Esfera no ar e publicando**: segundo programa de fidelidade, coletado por
   uma API pública sem proteção alguma. 176 aprovadas, primeiro lote publicado
@@ -64,6 +64,14 @@ Painel de Saúde mostra se cada job (coleta, recalibração, backup) está em di
 - **Backup real, pela primeira vez**: existia desde a arquitetura original mas
   nunca tinha sido agendado, e os destinos configurados nem existiam no disco.
   Agora roda diário via `launchd`, Postgres → Google Drive.
+- **Painel de Saúde passou a avisar, não só mostrar** (19/08): FALHA dispara
+  Telegram na hora; ATRASADA é checado a cada 6h. A primeira execução real
+  agendada do backup falhou (`docker` fora do PATH do `launchd`) — o próprio
+  painel pegou, corrigido no mesmo dia.
+- **`pytest-asyncio` desatualizado no `requirements.txt`**: pinava uma versão
+  incompatível com o `pytest` já pinado; só não quebrava porque o container
+  rodando tinha uma instalação avulsa, nunca reconstruída. Corrigido; suíte
+  inteira validada a partir de uma imagem reconstruída do zero.
 
 ## 2. Escopo atual e limites
 
@@ -112,9 +120,9 @@ Painel de Saúde mostra se cada job (coleta, recalibração, backup) está em di
 | Agendamento (`launchd`) | IMPLEMENTADO | Livelo 10:05, Esfera 10:20, recalibração semanal seg. 11h; só roda com o Mac ligado |
 | API (FastAPI) | IMPLEMENTADO | listagem ordenada, aprovação/rejeição individual e em lote, ingestão, reclassificação |
 | Painel admin | IMPLEMENTADO | triagem por nota, ações em lote, critérios do motor, regulamento e selos; fila de publicação com descarte; card de detalhes com histórico da nota e das ofertas anteriores do parceiro (sob demanda); aba Saúde com o status de cada job |
-| Painel de Saúde | IMPLEMENTADO | tabela `execucoes` + `GET /api/v1/saude`; coletor Livelo, coletor Esfera, recalibração e backup registram o próprio resultado ao terminar (sucesso/falha, contadores, erro); situação OK/FALHA/ATRASADA/NUNCA_RODOU por job |
-| Backup | IMPLEMENTADO (18/08) | diário via launchd (10:40), Postgres → Google Drive (camada de HD externo é opcional, só grava se já estiver montado); retenção de 30 backups na nuvem; sem criptografia (decisão, ver seção 5) |
-| Testes automatizados | PARCIAL | 97 backend (84 de lógica pura + 12 de integração API/banco + 1 smoke test de `alembic upgrade head`) + 43 coletor Livelo + 9 coletor Esfera. Cobre os fluxos onde já apareceu bug real; não é cobertura exaustiva |
+| Painel de Saúde | IMPLEMENTADO | tabela `execucoes` + `GET /api/v1/saude`; coletor Livelo, coletor Esfera, recalibração e backup registram o próprio resultado ao terminar (sucesso/falha, contadores, erro); situação OK/FALHA/ATRASADA/NUNCA_RODOU por job; **aviso ativo no Telegram (19/08)**: FALHA dispara na hora, ATRASADA é checado a cada 6h (`scripts/verificar_saude.sh`) |
+| Backup | IMPLEMENTADO (18/08, corrigido 19/08) | diário via launchd (10:40), Postgres → Google Drive (camada de HD externo é opcional, só grava se já estiver montado); retenção de 30 backups na nuvem; sem criptografia (decisão, ver seção 5). Falhou na primeira execução agendada de verdade (`docker: command not found` — PATH do launchd não inclui `/usr/local/bin`); o próprio Painel de Saúde pegou, corrigido no mesmo dia |
+| Testes automatizados | PARCIAL | 103 backend (84 de lógica pura + 18 de integração API/banco + 1 smoke test de `alembic upgrade head`) + 43 coletor Livelo + 9 coletor Esfera. Cobre os fluxos onde já apareceu bug real; não é cobertura exaustiva |
 | Publicação (Telegram) | IMPLEMENTADO | fila com curadoria, prévia, envio em lote, descarte, diagnóstico e aviso de divergência; mensagem por tópicos, com nome do programa |
 | Autenticação | PENDENTE | ver seção 8 |
 
@@ -505,6 +513,54 @@ quando não existe nenhuma. Sem criptografia por ora — o banco não guarda
 credencial nem dado pessoal de terceiros, decisão revisitável se isso for
 para um servidor externo algum dia.
 
+### Painel de Saúde: aviso ativo no Telegram, e dois bugs reais achados no processo (19/08)
+
+FALHA e ATRASADA não são a mesma coisa, e cada uma pede um mecanismo
+diferente (`application/saude_service.py`):
+
+- **FALHA é evento** — acontece no instante em que um job registra a
+  execução via `POST /api/v1/execucoes`. `registrar_execucao` dispara o
+  aviso ali mesmo, na hora.
+- **ATRASADA é estado, não evento** — ninguém "avisa" que ficou atrasado,
+  ele só fica assim conforme o tempo passa sem ninguém reportar. Só dá pra
+  pegar isso com checagem periódica: `scripts/verificar_saude.sh`, via
+  `launchd` a cada 6h (`StartInterval`, não horário de calendário — não
+  importa a hora exata, só a regularidade), chama
+  `POST /api/v1/saude/verificar-atrasados`.
+
+**Sem deduplicação, de propósito**: enquanto o job continuar atrasado, o
+alerta se repete a cada checagem (até 4x/dia). Um alarme que avisa uma vez e
+depois se cala deixaria a falha esquecida até a próxima olhada manual — pra
+um sistema de 1-2 pessoas, insistir é mais seguro que ficar quieto.
+
+Canal novo, `ALERTA` (`TELEGRAM_CANAL_ALERTA_ID`), separado de PUBLICO e
+AVANCADO — aviso operacional não é conteúdo que assinante deveria ver. É o
+DM direto do usuário com o bot (`chat_id` obtido mandando uma mensagem pro
+bot e consultando `getUpdates`), não um canal novo — mais simples pra quem
+hoje é a única pessoa acompanhando operação.
+
+**Dois bugs reais encontrados ao colocar isso no ar, nenhum relacionado ao
+alerta em si**:
+
+1. O backup, agendado desde 18/08, falhou na primeira execução real do
+   `launchd` com `docker: command not found`. O `launchd` roda com um PATH
+   mínimo (sem `/usr/local/bin`), diferente do shell interativo onde o
+   script tinha sido testado à mão — por isso passou no teste manual e
+   falhou no agendamento de verdade. Corrigido exportando o PATH no início
+   do script; validado de novo simulando o ambiente do `launchd` (`env -i`
+   com PATH mínimo), não só rodando no terminal normal. **O próprio Painel
+   de Saúde foi quem acusou isso** — a razão de ele existir.
+2. `requirements.txt` pinava `pytest-asyncio==0.24.0`, que exige
+   `pytest<9` — incompatível com o `pytest==9.1.1` já pinado desde a Tarefa
+   D. Um `docker compose build` limpo falhava com `ResolutionImpossible`;
+   só não quebrava até aqui porque o container `backend` rodando tinha uma
+   instalação avulsa de `pytest-asyncio`, nunca reconstruída desde que a
+   Tarefa D foi implementada. Descoberto ao recriar o container pra pegar a
+   variável nova do `.env` (`TELEGRAM_CANAL_ALERTA_ID`), o que apagou o
+   estado avulso e expôs o conflito real. Corrigido fixando
+   `pytest-asyncio==1.4.0`; suíte inteira (103 testes) validada a partir de
+   uma imagem reconstruída do zero, não do container antigo.
+
 ### Testes de integração: banco de teste e a armadilha do event loop do pytest-asyncio (18/08)
 
 `backend/tests/conftest.py` sobe um segundo banco (`garimpo_test`, mesmo
@@ -665,7 +721,8 @@ coletor-esfera/    # coletor Esfera, roda fora do Docker só por padrão operaci
   coletor_esfera.py # orquestra a coleta e envia pra API
   esfera_api.py      # busca e mapeia os campos da API pública da Esfera
   test_esfera_api.py # 9 testes
-scripts/           # recalibrar.sh, backup.sh (Postgres -> Google Drive) + plists do launchd
+scripts/           # recalibrar.sh, backup.sh (Postgres -> Google Drive),
+                   #   verificar_saude.sh (aviso de atraso) + plists do launchd
 docs/GAR-1100/     # arquitetura (Cap. 3 a 7)
 docs/ai/           # este handoff
 ```
@@ -706,7 +763,7 @@ defasada ele some do container. `docker compose build backend` resolve.
 | `aprovada_por` nulo | Auditoria | Baixo hoje | Depende de haver usuários; importa quando houver mais de um revisor |
 | Poucos parceiros com histórico próprio | Limitação temporária | Médio | Vale para os dois programas, mais agudo na Esfera (começou do zero em 17/08); a cascata por segmento cobre enquanto amadurece |
 | Esfera sem pontuação-base nem datas de campanha | Limitação de fonte | Médio | A API da Esfera não expõe campo limpo pra isso (seção 5); mensagens da Esfera não trazem "🗓 Validade" nem "📉 fora da campanha" até a fonte mudar |
-| Coletor depende do Mac ligado | Operacional | Médio | Vale pros dois coletores, recalibração e backup; se o Mac não ligar no horário, a aba Saúde do painel mostra ATRASADA depois de ~30h (semanal + folga pra recalibração), mas ainda depende de alguém abrir o painel — nenhum alerta ativo (push/Telegram) existe ainda |
+| Coletor depende do Mac ligado | Operacional | Baixo (19/08) | Vale pros dois coletores, recalibração e backup; se o Mac não ligar no horário, o Painel de Saúde avisa no Telegram — FALHA na hora, ATRASADA em até 6h. Ainda existe uma falha de ponta cega: se o Mac nunca ligar, nenhum job roda e nenhuma checagem de "atrasado" dispara sozinha (ela também depende de rodar) — só reduz o risco, não elimina |
 | Sem criptografia no backup | Segurança | Baixo | Decisão deliberada (18/08): o banco não guarda credencial nem dado pessoal de terceiros. Revisitar se for pra servidor externo |
 | Backup sem teste de restauração | Operacional | Médio | O backup roda e o dump é válido (testado com `gunzip -t`), mas nunca foi restaurado de fato num banco vazio — a prova real de um backup é conseguir restaurá-lo |
 | Rejeitadas com classificação velha | Consistência | Baixo | `reclassificar-todas` pula REJEITADAS por desenho |
@@ -774,6 +831,27 @@ estrutura (rótulo, campos) antes de investir num gerador de imagem — o
 card visual tem custo de produção real (template + render dinâmico) que o
 texto não tem, e vale confirmar que o formato visual realmente compensa antes
 de construir o gerador.
+
+### Tarefa G — Aviso ativo do Painel de Saúde — CONCLUÍDA (19/08)
+FALHA dispara Telegram na hora; ATRASADA é checado a cada 6h
+(`scripts/verificar_saude.sh`). Testado de ponta a ponta com uma falha real,
+confirmado recebido pelo usuário. Detalhe técnico e os dois bugs achados no
+processo (PATH do backup, `pytest-asyncio` incompatível) na seção 5.
+
+### Tarefa H — Testar uma restauração de verdade do backup
+O dump é gerado e validado (`gunzip -t`), mas nunca foi restaurado num banco
+vazio de fato — a única prova real de um backup é conseguir restaurá-lo.
+
+### Tarefa I — Horário real de atualização da Livelo e da Esfera
+Hoje é só "entendimento informal" (seção 6). Com mais dias de coleta
+acumulados dá pra olhar os timestamps reais de criação e confirmar quando
+cada programa de fato atualiza — melhora a precisão do agendamento e das
+janelas de "atrasado" do Painel de Saúde (`JANELA_POR_JOB`, seção 5).
+
+### Tarefa J — Terceiro programa de fidelidade? (pergunta em aberto, não proposta)
+Vale expandir a coleta pra um terceiro "ganhe pontos" (não é o Emissões,
+que é milhas aéreas) além de Livelo e Esfera? Sem candidato investigado
+ainda — depende de decisão do usuário antes de qualquer levantamento técnico.
 
 ## 10. Roteiro da próxima sessão
 
