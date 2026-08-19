@@ -9,6 +9,12 @@
 # agora. Revisitar se isso for para um servidor externo algum dia.
 set -uo pipefail
 
+# O launchd roda com um PATH mínimo (sem /usr/local/bin), diferente do shell
+# interativo onde este script foi testado manualmente — sem isso, `docker`
+# não é encontrado quando a execução é agendada (achado real: falhou às
+# 10:44 de 19/08 com "docker: command not found", mesmo já validado à mão).
+export PATH="/usr/local/bin:/opt/homebrew/bin:$PATH"
+
 API="http://127.0.0.1:8000/api/v1"
 AGORA=$(date "+%Y-%m-%d %H:%M:%S")
 DATA=$(date +%Y%m%d_%H%M%S)
