@@ -18,11 +18,13 @@ segundo produto planejado, **Garimpo Emissões** (passagens aéreas via milhas),
 **Estágio atual**: MVP funcional de ponta a ponta rodando localmente no Mac do
 usuário, dois programas de fidelidade coletando em paralelo, automaticamente,
 sem intervenção diária. Motor calibrado com dados reais, banco, API e painel
-de revisão estão implementados e em uso. 45 commits, 86 testes automatizados
-(backend, 78 de lógica pura + 8 de integração API/banco) + 43 coletor Livelo
-(41 + 2 do fix de caixa do `codigo_externo`) + 9 coletor Esfera.
+de revisão estão implementados e em uso. 50 commits, 97 testes automatizados
+(backend, 84 de lógica pura + 12 de integração API/banco + 1 smoke test de
+migration) + 43 coletor Livelo (41 + 2 do fix de caixa do `codigo_externo`) +
+9 coletor Esfera. Backup diário rodando de verdade pela primeira vez, e um
+Painel de Saúde mostra se cada job (coleta, recalibração, backup) está em dia.
 
-**O que mudou na sessão de 17–18/08**, em oito frentes:
+**O que mudou na sessão de 17–18/08**, em dez frentes:
 
 - **Esfera no ar e publicando**: segundo programa de fidelidade, coletado por
   uma API pública sem proteção alguma. 176 aprovadas, primeiro lote publicado
@@ -56,6 +58,12 @@ de revisão estão implementados e em uso. 45 commits, 86 testes automatizados
   e outra, fazendo-o virar dois `Parceiro` no banco (achado real: "Bankei").
   Causa raiz corrigida no coletor; os dois registros já existentes foram
   fundidos.
+- **Painel de Saúde**: cada job (coletor Livelo, coletor Esfera, recalibração,
+  backup) registra o próprio resultado ao terminar; nova aba no painel mostra
+  quem está OK, atrasado, falhou ou nunca rodou.
+- **Backup real, pela primeira vez**: existia desde a arquitetura original mas
+  nunca tinha sido agendado, e os destinos configurados nem existiam no disco.
+  Agora roda diário via `launchd`, Postgres → Google Drive.
 
 ## 2. Escopo atual e limites
 
@@ -103,8 +111,10 @@ de revisão estão implementados e em uso. 45 commits, 86 testes automatizados
 | Coletor Esfera | IMPLEMENTADO | `coletor-esfera/`; API pública sem anti-robô nenhum, Python simples (`httpx`); 9 testes |
 | Agendamento (`launchd`) | IMPLEMENTADO | Livelo 10:05, Esfera 10:20, recalibração semanal seg. 11h; só roda com o Mac ligado |
 | API (FastAPI) | IMPLEMENTADO | listagem ordenada, aprovação/rejeição individual e em lote, ingestão, reclassificação |
-| Painel admin | IMPLEMENTADO | triagem por nota, ações em lote, critérios do motor, regulamento e selos; fila de publicação com descarte; card de detalhes com histórico da nota e das ofertas anteriores do parceiro (sob demanda) |
-| Testes automatizados | PARCIAL | 86 backend (78 de lógica pura + 8 de integração API/banco contra `garimpo_test`) + 43 coletor Livelo + 9 coletor Esfera. Cobre os fluxos onde já apareceu bug real; não é cobertura exaustiva |
+| Painel admin | IMPLEMENTADO | triagem por nota, ações em lote, critérios do motor, regulamento e selos; fila de publicação com descarte; card de detalhes com histórico da nota e das ofertas anteriores do parceiro (sob demanda); aba Saúde com o status de cada job |
+| Painel de Saúde | IMPLEMENTADO | tabela `execucoes` + `GET /api/v1/saude`; coletor Livelo, coletor Esfera, recalibração e backup registram o próprio resultado ao terminar (sucesso/falha, contadores, erro); situação OK/FALHA/ATRASADA/NUNCA_RODOU por job |
+| Backup | IMPLEMENTADO (18/08) | diário via launchd (10:40), Postgres → Google Drive (camada de HD externo é opcional, só grava se já estiver montado); retenção de 30 backups na nuvem; sem criptografia (decisão, ver seção 5) |
+| Testes automatizados | PARCIAL | 97 backend (84 de lógica pura + 12 de integração API/banco + 1 smoke test de `alembic upgrade head`) + 43 coletor Livelo + 9 coletor Esfera. Cobre os fluxos onde já apareceu bug real; não é cobertura exaustiva |
 | Publicação (Telegram) | IMPLEMENTADO | fila com curadoria, prévia, envio em lote, descarte, diagnóstico e aviso de divergência; mensagem por tópicos, com nome do programa |
 | Autenticação | PENDENTE | ver seção 8 |
 
@@ -442,6 +452,59 @@ manualmente (as 2 promoções passaram a apontar para o `Parceiro` com código
 "BAN"; o duplicado com "ban" e sua `Marca` órfã foram removidos) — a correção
 no coletor evita repetir, mas não desfaz o que já tinha sido gravado.
 
+### Painel de Saúde: cada job se auto-reporta, em vez de o painel sondar (18/08)
+
+Decisão de desenho: quem sabe se um job deu certo é o próprio job — o coletor
+Livelo sabe se a coleta falhou, o backup sabe se a cópia pro Drive funcionou.
+Por isso `POST /api/v1/execucoes` é chamado por quem executa, ao terminar
+(sucesso ou falha), em vez do painel tentar inferir a saúde sondando cada
+sistema de fora. Mais simples, e cada job já loga exatamente esses números
+pro próprio arquivo de log — só passou a mandar pra API também.
+
+`job` na tabela `execucoes` não é FK: o conjunto é pequeno e fixo
+(`coletor_livelo`, `coletor_esfera`, `recalibracao`, `backup`), não um
+cadastro que cresce. "Mais recente" usa `codigo` (BigInteger Identity), não
+`created_at` — dentro de uma mesma transação Postgres, `now()` devolve
+sempre o mesmo valor, o que fez duas execuções de teste na mesma transação
+empatarem em `created_at` (achado real, testes/test_integracao_saude.py).
+
+Janela de atraso por job (`JANELA_POR_JOB` em `application/saude_service.py`)
+é "cadência esperada + folga larga" — os horários reais são só entendimento
+informal (seção 6), então a folga evita falso alarme por uma execução um
+pouco mais lenta que o normal.
+
+Reportar nunca pode derrubar o próprio job: um coletor que falha ao registrar
+a execução (ex: API fora do ar) só loga um aviso e segue — a ausência do
+report é exatamente o sinal que o painel deveria mostrar como ATRASADA/FALHA,
+travar o coletor por causa disso seria pior.
+
+Escopo deliberadamente pequeno: aba nova na barra de tabs já existente, não
+uma página inicial com menus — pra um painel de 1-2 pessoas que já sabe onde
+cada coisa fica, uma segunda camada de navegação só duplicaria a barra.
+
+### Backup: nunca tinha rodado (18/08)
+
+Achado ao revisar robustez do sistema: `scripts/backup.sh` existia desde a
+arquitetura original mas nunca foi agendado via `launchd` (ao contrário dos
+coletores e da recalibração), e os dois destinos que o script assumia por
+padrão (`/Volumes/BackupGarimpo`, `~/Google Drive/...`) não existiam no
+disco. A única cópia dos dados vivia só no volume Docker de um único Mac.
+
+Corrigido: Google Drive para computador instalado e logado nesta sessão; o
+caminho real da pasta sincronizada é
+`~/Library/CloudStorage/GoogleDrive-<email>/Meu Drive` (as versões atuais do
+app não usam mais `~/Google Drive`). Backup agendado via `launchd` às 10:40
+(depois das duas coletas), com retenção de 30 backups na nuvem.
+
+A camada de HD externo (opcional) só grava se o ponto de montagem já existir
+de verdade — o script nunca faz `mkdir -p` nele. Antes, um HD desconectado
+não causava erro nenhum: `mkdir -p /Volumes/BackupGarimpo/postgres` cria
+silenciosamente uma pasta comum no disco interno (já que `/Volumes/` é
+gravável), dando a falsa impressão de que existe uma cópia fora da máquina
+quando não existe nenhuma. Sem criptografia por ora — o banco não guarda
+credencial nem dado pessoal de terceiros, decisão revisitável se isso for
+para um servidor externo algum dia.
+
 ### Testes de integração: banco de teste e a armadilha do event loop do pytest-asyncio (18/08)
 
 `backend/tests/conftest.py` sobe um segundo banco (`garimpo_test`, mesmo
@@ -602,7 +665,7 @@ coletor-esfera/    # coletor Esfera, roda fora do Docker só por padrão operaci
   coletor_esfera.py # orquestra a coleta e envia pra API
   esfera_api.py      # busca e mapeia os campos da API pública da Esfera
   test_esfera_api.py # 9 testes
-scripts/           # recalibrar.sh + plist do launchd, backup.sh
+scripts/           # recalibrar.sh, backup.sh (Postgres -> Google Drive) + plists do launchd
 docs/GAR-1100/     # arquitetura (Cap. 3 a 7)
 docs/ai/           # este handoff
 ```
@@ -643,7 +706,9 @@ defasada ele some do container. `docker compose build backend` resolve.
 | `aprovada_por` nulo | Auditoria | Baixo hoje | Depende de haver usuários; importa quando houver mais de um revisor |
 | Poucos parceiros com histórico próprio | Limitação temporária | Médio | Vale para os dois programas, mais agudo na Esfera (começou do zero em 17/08); a cascata por segmento cobre enquanto amadurece |
 | Esfera sem pontuação-base nem datas de campanha | Limitação de fonte | Médio | A API da Esfera não expõe campo limpo pra isso (seção 5); mensagens da Esfera não trazem "🗓 Validade" nem "📉 fora da campanha" até a fonte mudar |
-| Coletor depende do Mac ligado | Operacional | Médio | Vale pros dois coletores agora, não só a Livelo; coleta diária pode falhar em silêncio, não há monitoramento |
+| Coletor depende do Mac ligado | Operacional | Médio | Vale pros dois coletores, recalibração e backup; se o Mac não ligar no horário, a aba Saúde do painel mostra ATRASADA depois de ~30h (semanal + folga pra recalibração), mas ainda depende de alguém abrir o painel — nenhum alerta ativo (push/Telegram) existe ainda |
+| Sem criptografia no backup | Segurança | Baixo | Decisão deliberada (18/08): o banco não guarda credencial nem dado pessoal de terceiros. Revisitar se for pra servidor externo |
+| Backup sem teste de restauração | Operacional | Médio | O backup roda e o dump é válido (testado com `gunzip -t`), mas nunca foi restaurado de fato num banco vazio — a prova real de um backup é conseguir restaurá-lo |
 | Rejeitadas com classificação velha | Consistência | Baixo | `reclassificar-todas` pula REJEITADAS por desenho |
 | Canal PUBLICO sem ID | Configuração | Baixo | Só o AVANCADO existe; a fila ignora canais não configurados |
 | Comparação entre programas (mesma marca, Livelo vs Esfera) | Produto | Baixo | Registrada como possibilidade (seção 2), não como tarefa — falta decidir critério de correspondência entre `Parceiro`s |
