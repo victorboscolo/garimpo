@@ -36,6 +36,8 @@ logger = logging.getLogger("garimpo.coletor_nativo.livelo")
 
 URL_LIVELO_PARCEIROS = "https://www.livelo.com.br/juntar-pontos/todos-os-parceiros"
 API_INGERIR_URL = "http://localhost:8000/api/v1/promocoes/ingerir"
+API_EXECUCOES_URL = "http://localhost:8000/api/v1/execucoes"
+JOB = "coletor_livelo"
 
 # Padroes validados contra texto real capturado do navegador em 10/08/2026.
 PADRAO_PONTOS = re.compile(r'(Até\s+)?(\d+)\s*pontos?\s*por\s*(R\$|U\$)\s*(\d+)')
@@ -472,7 +474,7 @@ async def coletar() -> list[PromocaoBruta]:
     return promocoes
 
 
-async def enviar_para_api(promocoes: list[PromocaoBruta]) -> None:
+async def enviar_para_api(promocoes: list[PromocaoBruta]) -> dict:
     enviados, falhas, descartados = 0, 0, 0
 
     async with httpx.AsyncClient(timeout=30.0) as client:
@@ -523,12 +525,34 @@ async def enviar_para_api(promocoes: list[PromocaoBruta]) -> None:
         "Envio concluído: %d criadas, %d descartadas (duplicata/parceiro não cadastrado), %d falhas.",
         enviados, descartados, falhas,
     )
+    return {"criadas": enviados, "descartadas": descartados, "falhas": falhas}
+
+
+async def _reportar_execucao(status: str, **campos) -> None:
+    """Registra o resultado desta execução pro Painel de Saúde.
+
+    Nunca deve derrubar a coleta: se a própria API estiver fora do ar, é
+    exatamente o cenário que o painel deveria estar avisando, então uma falha
+    aqui só é logada, não propagada.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            await client.post(API_EXECUCOES_URL, json={"job": JOB, "status": status, **campos})
+    except httpx.RequestError as e:
+        logger.warning("Não foi possível registrar a execução no Painel de Saúde: %s", e)
 
 
 async def main():
-    promocoes = await coletar()
+    try:
+        promocoes = await coletar()
+    except Exception as e:
+        logger.exception("Coleta falhou.")
+        await _reportar_execucao("FALHA", erro=str(e)[:500])
+        sys.exit(1)
+
     if not promocoes:
         logger.warning("Nenhuma promoção coletada — verifique se o site está acessível e sem bloqueio.")
+        await _reportar_execucao("FALHA", erro="Nenhuma promoção coletada")
         sys.exit(1)
 
     print(f"\n{'='*70}")
@@ -538,7 +562,8 @@ async def main():
         print(f"  {item.parceiro_nome_bruto:30s} {item.pontuacao:>6} {item.unidade_pontuacao}")
     print()
 
-    await enviar_para_api(promocoes)
+    resultado = await enviar_para_api(promocoes)
+    await _reportar_execucao("SUCESSO", **resultado)
 
 
 if __name__ == "__main__":

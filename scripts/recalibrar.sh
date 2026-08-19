@@ -29,8 +29,23 @@ if ! curl -sf -o /dev/null --max-time 10 "$API/promocoes?status=PENDENTE"; then
 fi
 
 echo "Reprocessando..."
-RESULTADO=$(curl -s --max-time 600 -X POST "$API/promocoes/reclassificar-todas")
+RESULTADO=$(curl -sf --max-time 600 -X POST "$API/promocoes/reclassificar-todas")
+if [ $? -ne 0 ]; then
+  echo "[$AGORA] ERRO: reclassificar-todas falhou."
+  curl -s --max-time 10 -X POST "$API/execucoes" \
+    -H "Content-Type: application/json" \
+    -d '{"job":"recalibracao","status":"FALHA","erro":"reclassificar-todas falhou ou expirou"}' > /dev/null
+  exit 1
+fi
 echo "Resultado: $RESULTADO"
+
+# Extração simples por regex, no mesmo espírito do case abaixo — não é um
+# parser de JSON de verdade, só pega os dois números que interessam pro painel.
+PROCESSADAS=$(echo "$RESULTADO" | grep -o '"processadas":[0-9]*' | grep -o '[0-9]*')
+ERROS=$(echo "$RESULTADO" | grep -o '"erros":[0-9]*' | grep -o '[0-9]*')
+curl -s --max-time 10 -X POST "$API/execucoes" \
+  -H "Content-Type: application/json" \
+  -d "{\"job\":\"recalibracao\",\"status\":\"SUCESSO\",\"criadas\":${PROCESSADAS:-null},\"falhas\":${ERROS:-null}}" > /dev/null
 
 echo "Conferindo divergências com o que já foi publicado..."
 DIVERGENCIAS=$(curl -s --max-time 30 "$API/publicacoes/divergencias")

@@ -5,7 +5,7 @@ Fonte da verdade do schema físico: GAR-1100 Cap. 3 (Rev. 2).
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Identity, String, Text, UniqueConstraint, func
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Identity, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -67,4 +67,31 @@ class Auditoria(Base):
     acao: Mapped[str] = mapped_column(String(100), nullable=False)
     dados_anteriores: Mapped[dict | None] = mapped_column(JSONB)
     dados_novos: Mapped[dict | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Execucao(Base):
+    """Uma linha por execução de um job de infraestrutura (coletor, recalibração,
+    backup) — quem executa registra o resultado ao terminar.
+
+    Suporte ao Painel de Saúde: sem isso, um coletor que parou de rodar (Mac
+    desligado, site mudou, anti-robô passou a bloquear) só é percebido quando
+    alguém nota a ausência de ofertas novas. `job` não é FK de propósito: o
+    conjunto de jobs é pequeno e fixo (coletor_livelo, coletor_esfera,
+    recalibracao, backup), não um cadastro que cresce.
+    """
+    __tablename__ = "execucoes"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # Critério de "mais recente" — não created_at: dentro de uma mesma
+    # transação Postgres, now() é sempre o mesmo valor, então duas execuções
+    # registradas na mesma transação empatariam. Identity() é sequencial de
+    # verdade.
+    codigo: Mapped[int] = mapped_column(BigInteger, Identity(), unique=True)
+    job: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)  # SUCESSO | FALHA
+    criadas: Mapped[int | None] = mapped_column(Integer)
+    descartadas: Mapped[int | None] = mapped_column(Integer)
+    falhas: Mapped[int | None] = mapped_column(Integer)
+    erro: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

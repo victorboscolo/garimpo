@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import Response
 
-from api.v1 import classificacoes, promocoes, publicacoes
+from api.v1 import classificacoes, promocoes, publicacoes, saude
 
 app = FastAPI(
     title="Garimpo Promoções — API",
@@ -13,6 +13,7 @@ app = FastAPI(
 app.include_router(promocoes.router, prefix="/api/v1/promocoes", tags=["promocoes"])
 app.include_router(classificacoes.router, prefix="/api/v1/promocoes", tags=["classificacoes"])
 app.include_router(publicacoes.router, prefix="/api/v1/publicacoes", tags=["publicacoes"])
+app.include_router(saude.router, prefix="/api/v1", tags=["saude"])
 
 class PainelSemCache(StaticFiles):
     """Serve o painel sempre revalidando com o servidor.

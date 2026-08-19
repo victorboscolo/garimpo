@@ -21,7 +21,9 @@ import httpx
 from esfera_api import ParceiroEsfera, buscar_parceiros, parceiro_para_bruta
 
 API_INGERIR_URL = "http://localhost:8000/api/v1/promocoes/ingerir"
+API_EXECUCOES_URL = "http://localhost:8000/api/v1/execucoes"
 PROGRAMA_NOME = "Esfera"
+JOB = "coletor_esfera"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -36,7 +38,7 @@ def coletar() -> list[ParceiroEsfera]:
     return [parceiro_para_bruta(item) for item in itens]
 
 
-def enviar_para_api(parceiros: list[ParceiroEsfera]) -> None:
+def enviar_para_api(parceiros: list[ParceiroEsfera]) -> dict:
     enviados, falhas, descartados = 0, 0, 0
 
     with httpx.Client(timeout=30.0) as client:
@@ -87,12 +89,34 @@ def enviar_para_api(parceiros: list[ParceiroEsfera]) -> None:
         "Envio concluído: %d criadas, %d descartadas (duplicata/parceiro não cadastrado), %d falhas.",
         enviados, descartados, falhas,
     )
+    return {"criadas": enviados, "descartadas": descartados, "falhas": falhas}
+
+
+def _reportar_execucao(status: str, **campos) -> None:
+    """Registra o resultado desta execução pro Painel de Saúde.
+
+    Nunca deve derrubar a coleta: se a própria API estiver fora do ar, é
+    exatamente o cenário que o painel deveria estar avisando, então uma falha
+    aqui só é logada, não propagada.
+    """
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            client.post(API_EXECUCOES_URL, json={"job": JOB, "status": status, **campos})
+    except httpx.RequestError as e:
+        logger.warning("Não foi possível registrar a execução no Painel de Saúde: %s", e)
 
 
 def main():
-    parceiros = coletar()
+    try:
+        parceiros = coletar()
+    except Exception as e:
+        logger.exception("Coleta falhou.")
+        _reportar_execucao("FALHA", erro=str(e)[:500])
+        sys.exit(1)
+
     if not parceiros:
         logger.warning("Nenhum parceiro coletado — verifique se a API da Esfera está acessível.")
+        _reportar_execucao("FALHA", erro="Nenhum parceiro coletado")
         sys.exit(1)
 
     print(f"\n{'='*70}")
@@ -103,7 +127,8 @@ def main():
         print(f"  {item.nome_exibicao:30s} {teto}{item.pontuacao:>6} {item.unidade_pontuacao}")
     print()
 
-    enviar_para_api(parceiros)
+    resultado = enviar_para_api(parceiros)
+    _reportar_execucao("SUCESSO", **resultado)
 
 
 if __name__ == "__main__":

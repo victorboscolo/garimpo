@@ -485,6 +485,19 @@
   .campo .rotulo { color: var(--stone-700); }
   .campo .valor { color: var(--ink); }
   .sem-dados { font-size: 12px; color: var(--stone-700); font-style: italic; }
+
+  /* ---- Painel de Saúde ---- */
+
+  .saude-badge {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 9px;
+    border-radius: 6px;
+  }
+  .saude-OK { background: var(--excelente-bg); color: var(--excelente); }
+  .saude-FALHA { background: var(--pouco-bg); color: var(--pouco); }
+  .saude-ATRASADA { background: var(--comum-bg); color: var(--comum); }
+  .saude-NUNCA_RODOU { background: var(--stone-100); color: var(--stone-700); }
 </style>
 </head>
 <body>
@@ -500,6 +513,7 @@
     <div class="tab" data-filtro="REJEITADA">Rejeitadas</div>
     <div class="tab" data-filtro="">Todas</div>
     <div class="tab" data-filtro="__PUBLICAR__">Publicar</div>
+    <div class="tab" data-filtro="__SAUDE__">Saúde</div>
   </div>
 </header>
 
@@ -567,6 +581,7 @@ function esc(valor) {
 
 async function carregar() {
   if (filtroAtual === "__PUBLICAR__") return carregarFila();
+  if (filtroAtual === "__SAUDE__") return carregarSaude();
   const lista = document.getElementById("lista");
   const contador = document.getElementById("contador");
   lista.innerHTML = "";
@@ -788,6 +803,68 @@ function itensSelecionadosDaFila() {
     const [promocao_id, tipo] = c.split("|");
     return { promocao_id, tipo };
   });
+}
+
+/* ---- Painel de Saúde ---- */
+
+const JOB_LABEL = {
+  coletor_livelo: "Coletor Livelo",
+  coletor_esfera: "Coletor Esfera",
+  recalibracao: "Recalibração semanal",
+  backup: "Backup",
+};
+
+const SITUACAO_LABEL = {
+  OK: "🟢 OK",
+  FALHA: "🔴 Falhou",
+  ATRASADA: "🟡 Atrasada",
+  NUNCA_RODOU: "⚪ Nunca rodou",
+};
+
+async function carregarSaude() {
+  const lista = document.getElementById("lista");
+  const contador = document.getElementById("contador");
+  document.getElementById("wrap-selecao-tudo").hidden = true;
+  document.getElementById("barra-lote").classList.add("oculta");
+  document.getElementById("btn-reprocessar").hidden = true;
+  lista.innerHTML = "";
+  contador.textContent = "Carregando saúde…";
+
+  let dados;
+  try {
+    dados = await (await fetch("/api/v1/saude")).json();
+  } catch (e) {
+    contador.textContent = "Erro ao carregar. A API está rodando em localhost:8000?";
+    return;
+  }
+
+  const jobs = dados.jobs || [];
+  const problemas = jobs.filter(j => j.situacao !== "OK").length;
+  contador.textContent = problemas === 0
+    ? `Tudo certo — ${jobs.length} jobs monitorados`
+    : `${problemas} de ${jobs.length} jobs pedem atenção`;
+
+  for (const item of jobs) {
+    const execucao = item.ultima_execucao;
+    const card = document.createElement("div");
+    card.className = "card sem-selecao";
+    card.innerHTML = `
+      <div class="card-main">
+        <div class="card-top">
+          <span class="parceiro-nome">${esc(JOB_LABEL[item.job] || item.job)}</span>
+          <span class="saude-badge saude-${esc(item.situacao)}">${esc(SITUACAO_LABEL[item.situacao] || item.situacao)}</span>
+        </div>
+        ${execucao ? `
+          <div class="campo"><span class="rotulo">Última execução:</span> <span class="valor">${formatData(execucao.executado_em)}</span></div>
+          ${execucao.criadas !== null ? `<div class="campo"><span class="rotulo">Criadas:</span> <span class="valor">${execucao.criadas}</span></div>` : ""}
+          ${execucao.descartadas !== null ? `<div class="campo"><span class="rotulo">Descartadas:</span> <span class="valor">${execucao.descartadas}</span></div>` : ""}
+          ${execucao.falhas !== null ? `<div class="campo"><span class="rotulo">Falhas:</span> <span class="valor">${execucao.falhas}</span></div>` : ""}
+          ${execucao.erro ? `<div class="campo"><span class="rotulo">Erro:</span> <span class="valor">${esc(execucao.erro)}</span></div>` : ""}
+        ` : `<div class="sem-dados">Nenhuma execução registrada ainda.</div>`}
+      </div>
+    `;
+    lista.appendChild(card);
+  }
 }
 
 async function descartarSelecionadas() {
