@@ -116,6 +116,16 @@ def test_url_sem_codigo_nao_quebra():
     assert _extrair_codigo_da_url("/juntar-pontos/parceiros/algum-parceiro") is None
 
 
+def test_codigo_em_minuscula_e_normalizado_para_maiuscula():
+    """A Livelo já serviu '/parceiros/bankei/ban' com o código em minúscula
+    numa coleta, e 'BAN' (via JSON) noutra — o mesmo parceiro virou dois
+    `Parceiro` no banco porque a busca por código é exata. O código da
+    variante não tem significado semântico na caixa, só identifica; normalizar
+    aqui evita duplicar de novo.
+    """
+    assert _extrair_codigo_da_url("/juntar-pontos/parceiros/bankei/ban") == "BAN"
+
+
 def test_codigo_vai_para_a_promocao_coletada():
     card = _parsear_card("1 ponto por R$ 1\nIr para regras do parceiro", "/juntar-pontos/parceiros/beach-park/BHP")
     assert card.codigo_externo == "BHP"

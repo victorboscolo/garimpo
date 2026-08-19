@@ -34,6 +34,15 @@ HTML_BEACH_PARK = '''<script>{"details":{
   "legalTerms":"<p><br></p>","separator":"=","parityBau":1,"promotion":false,
   "separatorSlug":"IGUAL","activeCampaign":"BAU","categoryParities":[]}}}</script>'''
 
+# A Livelo já serviu o id da Bankei em minúscula pelo JSON num dia, e em
+# maiúscula (via URL) noutro — mesmo parceiro virou dois `Parceiro` no banco.
+HTML_BANKEI_MINUSCULA = '''<script>{"details":{
+ "id":"ban","name":"Bankei","categories":"todos servicos",
+ "partnerDetailsPage":"https://livelo.com.br/juntar-pontos/parceiros/bankei/ban",
+ "parity":{"currency":"R$","currencyValue":1,"parity":2,"parityClub":2,
+  "legalTerms":"<p><br></p>","separator":"=","parityBau":2,"promotion":false,
+  "separatorSlug":"IGUAL","activeCampaign":"BAU","categoryParities":[]}}}</script>'''
+
 
 def test_extrai_parceiro_da_pagina():
     parceiros = extrair_parceiros(HTML_DECOLAR)
@@ -46,6 +55,20 @@ def test_pagina_sem_json_devolve_vazio():
     parsing de texto, não quebrar.
     """
     assert extrair_parceiros("<html><body>sem json aqui</body></html>") == {}
+
+
+def test_codigo_do_json_em_minuscula_e_normalizado_para_maiuscula():
+    """O código não tem significado semântico na caixa, só identifica — e a
+    busca por parceiro no backend é exata. Sem normalizar aqui, um "id" em
+    minúscula no JSON vira um segundo `Parceiro` para quem já existe com o
+    código em maiúscula (achado real: Bankei, "ban" vs "BAN").
+    """
+    parceiros = extrair_parceiros(HTML_BANKEI_MINUSCULA)
+    assert "BAN" in parceiros
+    assert "ban" not in parceiros
+
+    bruta = parceiro_para_bruta(parceiros["BAN"])
+    assert bruta.codigo_externo == "BAN"
 
 
 def test_campos_tipados_dispensam_regex():

@@ -126,13 +126,19 @@ def _extrair_codigo_da_url(href: str) -> str | None:
     Sem esse codigo, duas ofertas distintas do mesmo slug virariam o mesmo
     parceiro e o motor usaria uma como historico da outra. URL fora do padrao
     devolve None em vez de quebrar a coleta.
+
+    Maiusculiza o resultado: a Livelo ja serviu o mesmo codigo em caixas
+    diferentes em coletas distintas ('ban' via URL, 'BAN' via JSON), o que fez
+    o mesmo parceiro virar dois registros no banco (a busca por codigo e
+    exata). A caixa nao tem significado, so identifica.
     """
     partes = href.strip().rstrip("/").split("/")
     if len(partes) < 2 or partes[-2] == "parceiros":
         return None
     # A Livelo serve alguns hrefs com espaco no fim ('/klubi-auto/AUT '):
     # sem limpar, 'AUT ' viraria um parceiro diferente de 'AUT'.
-    return partes[-1].strip() or None
+    codigo = partes[-1].strip()
+    return codigo.upper() or None
 
 
 def _extrair_nome_exibicao(html_card: str) -> str | None:

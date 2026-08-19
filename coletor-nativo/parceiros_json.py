@@ -87,6 +87,11 @@ def extrair_parceiros(html: str) -> dict[str, dict]:
 
     Devolve vazio quando a estrutura não é encontrada, para que o chamador possa
     voltar ao parsing de texto em vez de perder a coleta do dia.
+
+    A chave é maiusculizada: a Livelo já serviu o mesmo "id" em caixas
+    diferentes em coletas distintas (achado real: Bankei, "ban" no JSON vs
+    "BAN" na URL), o que fez o mesmo parceiro virar dois `Parceiro` no banco —
+    a busca por código lá é exata. A caixa não tem significado, só identifica.
     """
     encontrados: dict[str, dict] = {}
     for achado in re.finditer(ANCORA, html):
@@ -95,7 +100,7 @@ def extrair_parceiros(html: str) -> dict[str, dict]:
             continue
         codigo = objeto.get("id")
         if codigo and isinstance(objeto.get("parity"), dict):
-            encontrados[codigo] = objeto
+            encontrados[codigo.upper()] = objeto
     return encontrados
 
 
@@ -151,8 +156,9 @@ def parceiro_para_bruta(objeto: dict) -> ParceiroJson:
     if clube is not None and pontuacao is not None and clube <= pontuacao:
         clube = None
 
+    _id = objeto.get("id")
     return ParceiroJson(
-        codigo_externo=objeto.get("id"),
+        codigo_externo=_id.upper() if _id else None,
         nome_exibicao=objeto.get("name"),
         pontuacao=pontuacao,
         unidade_pontuacao=UNIDADE_POR_MOEDA.get(moeda, "pontos_por_real"),
