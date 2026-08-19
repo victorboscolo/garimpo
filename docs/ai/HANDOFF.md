@@ -765,7 +765,7 @@ defasada ele some do container. `docker compose build backend` resolve.
 | Esfera sem pontuação-base nem datas de campanha | Limitação de fonte | Médio | A API da Esfera não expõe campo limpo pra isso (seção 5); mensagens da Esfera não trazem "🗓 Validade" nem "📉 fora da campanha" até a fonte mudar |
 | Coletor depende do Mac ligado | Operacional | Baixo (19/08) | Vale pros dois coletores, recalibração e backup; se o Mac não ligar no horário, o Painel de Saúde avisa no Telegram — FALHA na hora, ATRASADA em até 6h. Ainda existe uma falha de ponta cega: se o Mac nunca ligar, nenhum job roda e nenhuma checagem de "atrasado" dispara sozinha (ela também depende de rodar) — só reduz o risco, não elimina |
 | Sem criptografia no backup | Segurança | Baixo | Decisão deliberada (18/08): o banco não guarda credencial nem dado pessoal de terceiros. Revisitar se for pra servidor externo |
-| Backup sem teste de restauração | Operacional | Médio | O backup roda e o dump é válido (testado com `gunzip -t`), mas nunca foi restaurado de fato num banco vazio — a prova real de um backup é conseguir restaurá-lo |
+| Backup sem teste de restauração | Operacional | Resolvido (19/08) | Restaurado de verdade num banco isolado (`garimpo_restauracao_teste`, apagado depois) a partir do backup real de 19/08 11:22 — schema criou limpo, contagem de todas as tabelas idêntica à produção, um registro comparado campo a campo (inclusive UUID) bateu exato. Banco de produção nunca foi tocado |
 | Rejeitadas com classificação velha | Consistência | Baixo | `reclassificar-todas` pula REJEITADAS por desenho |
 | Canal PUBLICO sem ID | Configuração | Baixo | Só o AVANCADO existe; a fila ignora canais não configurados |
 | Comparação entre programas (mesma marca, Livelo vs Esfera) | Produto | Baixo | Registrada como possibilidade (seção 2), não como tarefa — falta decidir critério de correspondência entre `Parceiro`s |
@@ -838,9 +838,11 @@ FALHA dispara Telegram na hora; ATRASADA é checado a cada 6h
 confirmado recebido pelo usuário. Detalhe técnico e os dois bugs achados no
 processo (PATH do backup, `pytest-asyncio` incompatível) na seção 5.
 
-### Tarefa H — Testar uma restauração de verdade do backup
-O dump é gerado e validado (`gunzip -t`), mas nunca foi restaurado num banco
-vazio de fato — a única prova real de um backup é conseguir restaurá-lo.
+### Tarefa H — Testar uma restauração de verdade do backup — CONCLUÍDA (19/08)
+Restaurado num banco isolado e descartado depois (`garimpo_restauracao_teste`),
+a partir do backup real do dia. Schema limpo, contagem de tabelas idêntica à
+produção, um registro batido campo a campo (inclusive UUID). Banco de
+produção nunca foi tocado durante o teste.
 
 ### Tarefa I — Horário real de atualização da Livelo e da Esfera
 Hoje é só "entendimento informal" (seção 6). Com mais dias de coleta
