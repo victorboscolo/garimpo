@@ -621,7 +621,10 @@ permissão por escrito ("Commercial Purpose" é definido de forma ampla —
 inclui afiliação com entidade que gera receita); voos além de 60 dias não
 podem ser mostrados publicamente sem OAuth ou acordo comercial. Conta Pro do
 usuário já existe, mas **não é elegível pra API automaticamente** — pedido
-de elegibilidade enviado ao suporte deles em 18/08, resposta pendente.
+de elegibilidade enviado ao suporte deles em 18/08. **Resposta em 19/08:
+negativa — a API não está disponível para o Brasil.** Não é "ainda não
+aprovado", é um "não" definitivo por geografia; não faz sentido insistir ou
+reenviar o pedido. Esse caminho está fechado.
 
 **Achado de segurança/legal, não só técnico**: a Air Canada processa o
 Seats.aero alegando que scraping automatizado de disponibilidade de prêmio é
@@ -632,7 +635,19 @@ quando tecnicamente possível.
 
 **Monitoramento automático criado**: rotina mensal (`trig_01VNZZmfuWBgzaA6QcRU3BB7`,
 todo dia 1º) verifica se seats.aero ou AwardFares passaram a suportar LATAM
-Pass; só notifica se algo mudar.
+Pass; só notifica se algo mudar. Continua valendo — é um eixo diferente
+(suporte a LATAM Pass) do que fechou agora (disponibilidade da API pro
+Brasil), não fica obsoleta por causa da resposta negativa.
+
+**Onde isso deixa o Emissões (19/08)**: com o seats.aero fechado pro Brasil,
+o único caminho que sobra é construir um coletor próprio, e só cobre a Azul
+— Smiles continua bloqueada pelo Akamai e LATAM continua exigindo login
+(seção 2, premissa de nunca contornar autenticação). Antes o plano era "se
+o seats.aero aprovar, cobre Smiles+Azul de uma vez; se não, a Azul sozinha
+já tem arquitetura mapeada". Agora não tem mais "se" — ou é Azul sozinha
+(aquecer sessão, lotes de ~8 buscas, reaquecer, mapeado na tabela acima),
+ou o Emissões fica em pausa. Decisão de produto em aberto, não tomada:
+vale construir um coletor de Emissões que cobre só 1 de 3 programas?
 
 **Decisão de produto pra quando (se) a coleta de Emissões avançar**: sem
 nota automática por enquanto — o sistema não tem histórico suficiente pra
@@ -771,7 +786,7 @@ defasada ele some do container. `docker compose build backend` resolve.
 | Comparação entre programas (mesma marca, Livelo vs Esfera) | Produto | Baixo | Registrada como possibilidade (seção 2), não como tarefa — falta decidir critério de correspondência entre `Parceiro`s |
 | Horário de atualização dos programas | Premissa | Baixo (resolvido por ora, 19/08) | `created_at` não serve pra isso (só marca quando nós coletamos). Teste empírico único (recoleta às 11:45 de 19/08, ~1h30 depois do agendado): 0 novidades nas duas fontes — evidência de que a janela atual não perde nada, mas é 1 dia só. Ver seção 5 |
 | "Bankei" duplicado (Livelo) | Qualidade de dado | Resolvido (18/08) | Era dois `Parceiro` pro mesmo negócio — `codigo_externo` gravado como "ban" numa coleta e "BAN" noutra. Causa raiz corrigida (seção 5); os dois registros foram fundidos no banco (as 2 promoções passaram para o `Parceiro` com código "BAN", o duplicado e sua `Marca` órfã foram removidos) |
-| seats.aero — elegibilidade de API pendente | Bloqueio externo | Médio | Pedido enviado em 18/08 (conta Pro já existe, mas API não é automática); cobriria Smiles + Azul de uma vez se aprovado. Ver seção 5 |
+| seats.aero — API não disponível pro Brasil | Bloqueio externo, fechado (19/08) | Baixo | Resposta definitiva do suporte: não é elegibilidade pendente, é indisponibilidade geográfica — não reenviar o pedido. Se o Emissões avançar, único caminho agora é coletor próprio da Azul (só ela, Smiles e LATAM seguem bloqueadas). Ver seção 5 |
 | LATAM Pass sem suporte em nenhuma ferramenta do mercado | Limitação externa | Baixo | Nem seats.aero nem AwardFares cobrem; rotina mensal automática (seção 5) avisa se isso mudar — não precisa checagem manual |
 
 ## 9. Próximas tarefas recomendadas
@@ -783,16 +798,18 @@ especificamente sobre a Esfera, do jeito que houve pra Livelo — vale
 perguntar, é o insumo que falta pra saber se a régua está calibrada pro
 segundo programa.
 
-### Tarefa B — Retomar Garimpo Emissões quando o seats.aero responder
-Investigação completa na seção 5. Se a API for aprovada: cobre Smiles e Azul
-de uma vez, elimina a complexidade de sessão que a Azul exige sozinha —
-tratar como caminho principal, guardando o que foi aprendido sobre a Azul
-como plano B. Se não for aprovada, ou demorar: a Azul sozinha já tem
-arquitetura mapeada (aquecer sessão, lotes de ~8 buscas, reaquecer) pra
-começar um coletor próprio. Duas decisões de produto ainda em aberto antes de
-qualquer código: como guardar histórico de preço ao longo do tempo (pra
-sinal de "queda de preço") e como exibir isso pro usuário sem nota
-automática (seção 5).
+### Tarefa B — Decidir o futuro do Garimpo Emissões (seats.aero fechado, 19/08)
+Investigação completa na seção 5. O seats.aero respondeu **não** — API
+indisponível pro Brasil, não é questão de esperar mais. Isso mata o cenário
+que cobria Smiles+Azul de uma vez; o que sobra é só a Azul, com coletor
+próprio (aquecer sessão, lotes de ~8 buscas, reaquecer — arquitetura já
+mapeada). Smiles (Akamai) e LATAM (login) continuam sem caminho.
+
+**Decisão de produto ainda não tomada, e agora é o bloqueio real**: vale
+construir um coletor de Emissões que cobre só 1 de 3 programas de milhas
+aéreas? Se sim, ainda faltam decidir, antes de qualquer código: como
+guardar histórico de preço ao longo do tempo (pro sinal de "queda de
+preço") e como exibir isso pro usuário sem nota automática (seção 5).
 
 ### Tarefa C — Histórico na tela — CONCLUÍDA (18/08)
 As duas seções combinadas foram implementadas no card de "Ver detalhes",
@@ -867,14 +884,28 @@ Vale expandir a coleta pra um terceiro "ganhe pontos" (não é o Emissões,
 que é milhas aéreas) além de Livelo e Esfera? Sem candidato investigado
 ainda — depende de decisão do usuário antes de qualquer levantamento técnico.
 
+**Candidatos testados e descartados (19/08)**: o usuário sugeriu Shopping
+Smiles e o equivalente da Azul. Os dois foram checados de verdade
+(`shoppingsmiles.com.br`, `shopping.azulfidelidade.com.br`) e **não servem**
+— são marketplaces de resgate por produto (troca milhas por um item
+catalogado no próprio site, tipo "Shopping Azul Fidelidade" com "Queima de
+Estoque Asics"), modelo bem diferente do Livelo/Esfera (ganhar pontos
+comprando normalmente numa loja parceira). Não existe, em nenhum dos dois,
+um diretório de centenas de parceiros por taxa de acúmulo — o mais perto
+disso na Smiles é uma lista pequena (~4-5) de parceiros de serviço
+(Uber, combustível, conta digital). Candidatos ainda não testados:
+Dotz e Iupp (Itaú), sugeridos por mim, mais parecidos em estrutura mas sem
+investigação técnica nenhuma ainda.
+
 ## 10. Roteiro da próxima sessão
 
 1. Ler este arquivo por completo.
 2. Conferir o estado real antes de agir: `git log --oneline`, `git status`,
    `docker compose ps`, contagem por status/programa em `promocoes`. **Os
    números da seção 3 são de 18/08 e envelhecem a cada coleta diária.**
-3. Checar se o seats.aero respondeu o pedido de elegibilidade de API (seção
-   5) — muda o próximo passo de Emissões inteiro.
+3. seats.aero já respondeu (negativo, API indisponível pro Brasil — 19/08).
+   Se o usuário quiser retomar Emissões, a decisão em aberto é a Tarefa B
+   (vale construir coletor cobrindo só a Azul?), não mais "esperar resposta".
 4. Conferir se as coletas automáticas (10:05 Livelo, 10:20 Esfera) rodaram e
    quantos registros cada uma criou. Esperado: poucos por dia (dedup por
    hash); uma centena de repente indicaria hash invalidado (seção 5).
