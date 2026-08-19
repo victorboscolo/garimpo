@@ -18,10 +18,11 @@ segundo produto planejado, **Garimpo Emissões** (passagens aéreas via milhas),
 **Estágio atual**: MVP funcional de ponta a ponta rodando localmente no Mac do
 usuário, dois programas de fidelidade coletando em paralelo, automaticamente,
 sem intervenção diária. Motor calibrado com dados reais, banco, API e painel
-de revisão estão implementados e em uso. 41 commits, 78 testes automatizados
-(backend) + 9 (coletor Esfera) + os do coletor Livelo.
+de revisão estão implementados e em uso. 45 commits, 86 testes automatizados
+(backend, 78 de lógica pura + 8 de integração API/banco) + 43 coletor Livelo
+(41 + 2 do fix de caixa do `codigo_externo`) + 9 coletor Esfera.
 
-**O que mudou na sessão de 17–18/08**, em quatro frentes:
+**O que mudou na sessão de 17–18/08**, em oito frentes:
 
 - **Esfera no ar e publicando**: segundo programa de fidelidade, coletado por
   uma API pública sem proteção alguma. 176 aprovadas, primeiro lote publicado
@@ -40,6 +41,21 @@ de revisão estão implementados e em uso. 41 commits, 78 testes automatizados
   Smiles, LATAM Pass e Azul/TudoAzul diretamente, mais a API do seats.aero
   como alternativa. Resultado: só a Azul é viável por conta própria hoje;
   Smiles e LATAM estão fechadas. Mapa completo na seção 5.
+- **Testes de integração contra API e banco reais** (Tarefa D): banco de teste
+  `garimpo_test`, `pytest-asyncio`, isolamento por SAVEPOINT, 5 testes cobrindo
+  ingestão de ponta a ponta, reclassificação em lote, fila de publicação com
+  canal não configurado e a regressão do bug de regulamento da Esfera.
+- **Histórico no painel** (Tarefa C): o card de detalhes agora mostra o
+  histórico de reclassificações da nota e as ofertas anteriores do mesmo
+  parceiro, carregados sob demanda ao abrir o card.
+- **Aprovação individual avisa em vez de reclassificar** (Tarefa E): decisão
+  tomada — a aba Publicar mostra um aviso quando há aprovação mais nova que a
+  última reclassificação geral, com atalho para reprocessar.
+- **Bug de identidade corrigido e duplicata fundida**: o `codigo_externo` da
+  Livelo podia gravar em caixas diferentes pro mesmo parceiro entre uma coleta
+  e outra, fazendo-o virar dois `Parceiro` no banco (achado real: "Bankei").
+  Causa raiz corrigida no coletor; os dois registros já existentes foram
+  fundidos.
 
 ## 2. Escopo atual e limites
 
@@ -79,7 +95,7 @@ de revisão estão implementados e em uso. 41 commits, 78 testes automatizados
 
 | Componente | Status | Observação |
 |---|---|---|
-| Controle de versão | IMPLEMENTADO | 41 commits, working tree limpo; `.gitignore` cobre `.env`, `venv/`, logs, `.pytest_cache` |
+| Controle de versão | IMPLEMENTADO | 45 commits, working tree limpo; `.gitignore` cobre `.env`, `venv/`, logs, `.pytest_cache` |
 | Modelo de dados | IMPLEMENTADO | 18 tabelas, migrations 0001–0008 aplicadas |
 | Motor de Análise V1 | IMPLEMENTADO | 6 pilares; comparativos por percentil, escopados por programa; base em cascata (família → segmento → mercado) |
 | Coletor Livelo nativo (macOS) | IMPLEMENTADO | lê o JSON estruturado da listagem; parsing de texto como fallback; 41 testes |
@@ -87,8 +103,8 @@ de revisão estão implementados e em uso. 41 commits, 78 testes automatizados
 | Coletor Esfera | IMPLEMENTADO | `coletor-esfera/`; API pública sem anti-robô nenhum, Python simples (`httpx`); 9 testes |
 | Agendamento (`launchd`) | IMPLEMENTADO | Livelo 10:05, Esfera 10:20, recalibração semanal seg. 11h; só roda com o Mac ligado |
 | API (FastAPI) | IMPLEMENTADO | listagem ordenada, aprovação/rejeição individual e em lote, ingestão, reclassificação |
-| Painel admin | IMPLEMENTADO | triagem por nota, ações em lote, critérios do motor, regulamento e selos; fila de publicação com descarte |
-| Testes automatizados | PARCIAL | 78 backend + 41 coletor Livelo + 9 coletor Esfera, todos de lógica pura; nada de API/banco |
+| Painel admin | IMPLEMENTADO | triagem por nota, ações em lote, critérios do motor, regulamento e selos; fila de publicação com descarte; card de detalhes com histórico da nota e das ofertas anteriores do parceiro (sob demanda) |
+| Testes automatizados | PARCIAL | 86 backend (78 de lógica pura + 8 de integração API/banco contra `garimpo_test`) + 43 coletor Livelo + 9 coletor Esfera. Cobre os fluxos onde já apareceu bug real; não é cobertura exaustiva |
 | Publicação (Telegram) | IMPLEMENTADO | fila com curadoria, prévia, envio em lote, descarte, diagnóstico e aviso de divergência; mensagem por tópicos, com nome do programa |
 | Autenticação | PENDENTE | ver seção 8 |
 
@@ -97,7 +113,7 @@ de revisão estão implementados e em uso. 41 commits, 78 testes automatizados
 | | |
 |---|---|
 | Promoções | 561 — 380 aprovadas Livelo + 5 rejeitadas Livelo + 176 aprovadas Esfera, 0 pendentes |
-| Parceiros | 423 (mesma marca em programas diferentes ainda vira `Parceiro` separado, seção 2 — inclui 1 bug pequeno conhecido: "Bankei" duplicado por `codigo_externo` gravado com caixa diferente, "ban" vs "BAN", não corrigido) |
+| Parceiros | 422 (mesma marca em programas diferentes ainda vira `Parceiro` separado, seção 2 — a duplicata "Bankei" por `codigo_externo` em caixas diferentes foi fundida em 18/08, ver seção 5) |
 | Categorias de origem / vínculos | 65 slugs / 669 vínculos, em 2 programas |
 | Categorias canônicas | 15 (8 originais + 7 criadas na curadoria: Beleza, Infantil, Pet, Presentes, Seguros e Consórcios, Serviços, Varejo). **669 de 669 vínculos classificados — cobertura de 100%**, curadoria manual completa (seção 5) |
 | Publicadas no Telegram | 49, todas AVANCADO (Livelo + Esfera). Canal PUBLICO segue sem ID configurado |
@@ -390,6 +406,67 @@ placeholder antigo (`PADRAO_FRASE_DO_COLETOR`, já existia em
 do fix: bloco de regulamento passou a aparecer em 287 das 364 promoções da
 Livelo (era 73) e nas 167 da Esfera (era 0).
 
+### Aprovação individual: avisar, não reclassificar (18/08)
+
+Pendência da seção 8 anterior, decidida pelo usuário: seguir a recomendação
+de só avisar. `application/divergencia.py::aprovacoes_apos_ultima_reclassificacao`
+compara o timestamp da aprovação mais recente (`promocoes.aprovada_em`) com o
+da reclassificação mais recente (`max(classificacoes.processada_em)`) — se uma
+aprovação avulsa é mais nova, ela ainda não influenciou a base de comparação
+de mais ninguém. `GET /publicacoes/aviso-reclassificacao` expõe isso e a aba
+Publicar mostra um aviso com botão "Reprocessar tudo agora", no mesmo padrão
+já usado pro aviso de divergência.
+
+### Bug: `codigo_externo` da Livelo podia gravar em caixas diferentes para o mesmo parceiro (18/08)
+
+Causa raiz do "Bankei duplicado" (seção 8): o coletor da Livelo tem dois
+caminhos que podem originar `codigo_externo` — o "id" do JSON estruturado
+(`parceiros_json.py`) e o último segmento da URL do link (`_extrair_codigo_da_url`
+em `coletor_livelo_nativo.py`). Os dois extraem o valor verbatim da própria
+Livelo, sem normalizar; quando a própria Livelo serviu o código em caixas
+diferentes num e noutro (`"ban"` vs `"BAN"`), a busca exata de `Parceiro` por
+`codigo_externo` no `ingestao_service.py` não reconheceu que era o mesmo
+parceiro, e criou um segundo registro.
+
+Corrigido maiusculizando o código nos dois pontos de extração (não no
+`ingestao_service.py`, que trata `codigo_externo` de forma genérica pros dois
+programas): a caixa não tem significado semântico, só identifica, e os
+próprios testes já documentavam o padrão maiúsculo ("BPK", "DCR") como
+esperado. **Só vale pra Livelo** — a Esfera não foi tocada, porque os códigos
+dela (`"e000100025"...`) são nativamente minúsculos e normalizar seria alterar
+um dado que a fonte não trata como maiúsculo, o que violaria a regra de não
+inventar/transformar dado.
+
+Os dois registros duplicados de "Bankei" existentes no banco foram fundidos
+manualmente (as 2 promoções passaram a apontar para o `Parceiro` com código
+"BAN"; o duplicado com "ban" e sua `Marca` órfã foram removidos) — a correção
+no coletor evita repetir, mas não desfaz o que já tinha sido gravado.
+
+### Testes de integração: banco de teste e a armadilha do event loop do pytest-asyncio (18/08)
+
+`backend/tests/conftest.py` sobe um segundo banco (`garimpo_test`, mesmo
+Postgres do docker-compose) e isola cada teste numa transação com SAVEPOINT
+por baixo — necessário porque o próprio código de produção chama `db.commit()`
+(ex: `ingerir_promocao_bruta`), e sem o savepoint um commit real encerraria a
+transação de isolamento do teste.
+
+Armadilha encontrada: o `pytest-asyncio` (modo `auto`) dá a cada teste um
+event loop **novo**. Uma engine/conexão asyncpg criada como fixture de sessão
+(escopo `session`) fica presa ao loop do primeiro teste que a usa, e o
+segundo teste — rodando num loop diferente — recebe
+`RuntimeError: ... attached to a different loop`. `NullPool` sozinho não
+resolve, porque o problema não é reaproveitar conexão do pool: é a própria
+fixture de banco (`db`, escopo função) sendo criada em um loop e usada em
+outro quando o escopo da fixture e o do loop do teste não coincidem.
+
+Solução: nada de fixture `session`-scoped para o schema. `Base.metadata.create_all()`
+roda uma vez, fora do ciclo do pytest, com `asyncio.run()` direto na coleta do
+`conftest.py` — um loop descartável, só para preparar o schema. Cada teste
+então abre sua própria conexão (`NullPool`, sem pool persistente entre loops)
+dentro do loop que o pytest-asyncio já criou pra ele. Vale registrar para não
+repetir a investigação: o sintoma (`attached to a different loop`) não aponta
+para a causa raiz de forma óbvia.
+
 ### Garimpo Emissões — investigação de viabilidade (Smiles, LATAM, Azul, seats.aero)
 
 Nenhum código de produção foi escrito; isto documenta o que foi aprendido
@@ -516,7 +593,7 @@ backend/
   migrations/      # Alembic (0001–0008)
   scripts_backfill/# backfills pontuais, com dry-run
   static/admin/    # painel
-  tests/           # 78 testes de lógica pura
+  tests/           # 78 de lógica pura + 8 de integração (conftest.py, banco garimpo_test)
 coletor-nativo/    # coletor Livelo, roda fora do Docker (bloqueio anti-robô), venv próprio
   coletor_livelo_nativo.py # orquestra a coleta; fallback de texto
   parceiros_json.py        # lê o JSON estruturado da página (caminho principal)
@@ -535,7 +612,7 @@ docs/ai/           # este handoff
 docker compose up -d                                    # sobe tudo
 docker compose exec backend alembic upgrade head        # migrations
 docker compose exec backend python -m pytest tests/ -q  # testes do backend
-cd coletor-nativo && ./venv/bin/python3 -m pytest test_coletor_livelo.py -q
+cd coletor-nativo && ./venv/bin/python3 -m pytest -q
 cd coletor-esfera && ./venv/bin/python3 -m pytest test_esfera_api.py -q
 open http://localhost:8000/admin/                       # painel
 cd coletor-nativo && ./venv/bin/python3 coletor_livelo_nativo.py   # coleta manual Livelo
@@ -545,10 +622,12 @@ launchctl start com.garimpo.coletor-esfera               # força a coleta Esfer
 ./scripts/recalibrar.sh                                  # reprocessa tudo agora
 ```
 
-**Testes:** a suíte cobre **lógica pura** — parsing dos dois coletores, faixas
-do motor, hash de dedup, regras de condição, montagem de mensagem. Não há
-teste de API nem de banco; isso exigiria pytest-asyncio e um banco de teste, e
-nunca foi montado. O painel é validado manualmente no navegador.
+**Testes:** a maior parte da suíte cobre **lógica pura** — parsing dos dois
+coletores, faixas do motor, hash de dedup, regras de condição, montagem de
+mensagem. Desde 18/08 há também 8 testes de **integração** (`tests/test_integracao_*.py`)
+contra API e banco reais (`garimpo_test`, ver `tests/conftest.py`) — cobrem o
+caminho request → serviço → ORM → banco que os testes de lógica pura não
+alcançam. O painel continua validado manualmente no navegador.
 
 **Atenção:** o `pytest` está no `requirements.txt`, mas se a imagem estiver
 defasada ele some do container. `docker compose build backend` resolve.
@@ -560,17 +639,16 @@ defasada ele some do container. `docker compose build backend` resolve.
 | Item | Tipo | Impacto | Próximo passo |
 |---|---|---|---|
 | Sem autenticação | Segurança | Médio | Portas já restritas a `127.0.0.1`, o que fecha o acesso pela rede. Uma chave de API no `/ingerir` seria o próximo passo; JWT completo é desproporcional hoje |
-| Aprovação individual não reclassifica | Consistência | Médio | Só `aprovar-lote` chama `reclassificar_todas`; aprovar uma por uma deixa a fila com nota potencialmente desatualizada até a próxima recalibração ou lote. Decisão em aberto, perguntada ao usuário e ainda sem resposta: reclassificar a cada aprovação individual (mais correto, mais lento) ou só avisar na aba Publicar quando houver aprovação mais recente que a última classificação |
+| Aprovação individual não reclassifica | Consistência | Baixo | Decisão tomada (18/08): não reclassificar, só avisar. `GET /publicacoes/aviso-reclassificacao` compara a aprovação mais recente com a última reclassificação geral e a aba Publicar mostra um aviso com botão "Reprocessar tudo agora" quando há aprovação mais nova. Ver seção 5 |
 | `aprovada_por` nulo | Auditoria | Baixo hoje | Depende de haver usuários; importa quando houver mais de um revisor |
 | Poucos parceiros com histórico próprio | Limitação temporária | Médio | Vale para os dois programas, mais agudo na Esfera (começou do zero em 17/08); a cascata por segmento cobre enquanto amadurece |
 | Esfera sem pontuação-base nem datas de campanha | Limitação de fonte | Médio | A API da Esfera não expõe campo limpo pra isso (seção 5); mensagens da Esfera não trazem "🗓 Validade" nem "📉 fora da campanha" até a fonte mudar |
 | Coletor depende do Mac ligado | Operacional | Médio | Vale pros dois coletores agora, não só a Livelo; coleta diária pode falhar em silêncio, não há monitoramento |
-| Sem teste de API/banco | Qualidade | Médio | Vários bugs de sessões anteriores (MissingGreenlet, MultipleResultsFound, fuso na validade, canal não configurado bloqueando o lote, detecção de regulamento restrita à Livelo) só apareceram em execução real |
 | Rejeitadas com classificação velha | Consistência | Baixo | `reclassificar-todas` pula REJEITADAS por desenho |
 | Canal PUBLICO sem ID | Configuração | Baixo | Só o AVANCADO existe; a fila ignora canais não configurados |
 | Comparação entre programas (mesma marca, Livelo vs Esfera) | Produto | Baixo | Registrada como possibilidade (seção 2), não como tarefa — falta decidir critério de correspondência entre `Parceiro`s |
 | Horário de atualização dos programas | Premissa | Baixo | Observar empiricamente, pros dois |
-| "Bankei" duplicado (Livelo) | Qualidade de dado | Baixo | Dois `Parceiro` pro mesmo negócio — `codigo_externo` gravado como "ban" numa coleta e "BAN" noutra (case-sensitive onde não devia). Achado durante a curadoria de categoria; não corrigido, afeta só esse um parceiro |
+| "Bankei" duplicado (Livelo) | Qualidade de dado | Resolvido (18/08) | Era dois `Parceiro` pro mesmo negócio — `codigo_externo` gravado como "ban" numa coleta e "BAN" noutra. Causa raiz corrigida (seção 5); os dois registros foram fundidos no banco (as 2 promoções passaram para o `Parceiro` com código "BAN", o duplicado e sua `Marca` órfã foram removidos) |
 | seats.aero — elegibilidade de API pendente | Bloqueio externo | Médio | Pedido enviado em 18/08 (conta Pro já existe, mas API não é automática); cobriria Smiles + Azul de uma vez se aprovado. Ver seção 5 |
 | LATAM Pass sem suporte em nenhuma ferramenta do mercado | Limitação externa | Baixo | Nem seats.aero nem AwardFares cobrem; rotina mensal automática (seção 5) avisa se isso mudar — não precisa checagem manual |
 
@@ -594,25 +672,43 @@ qualquer código: como guardar histórico de preço ao longo do tempo (pra
 sinal de "queda de preço") e como exibir isso pro usuário sem nota
 automática (seção 5).
 
-### Tarefa C — Histórico na tela (desenho aprovado, não implementado)
-Duas seções novas dentro do "Ver detalhes" que já existe, carregadas **sob
-demanda** ao expandir o card, para não voltar a fazer centenas de requisições no
-carregamento:
-- **Histórico da nota desta promoção** — como a avaliação evoluiu. Endpoint
-  `GET /promocoes/{id}/classificacoes` já existe.
-- **Histórico de ofertas deste parceiro** — como a oferta mudou ao longo dos
-  dias. `GET /promocoes?parceiro_id=X` já existe.
+### Tarefa C — Histórico na tela — CONCLUÍDA (18/08)
+As duas seções combinadas foram implementadas no card de "Ver detalhes",
+carregadas sob demanda ao expandir (não no carregamento da lista): histórico
+de reclassificações da nota (`GET /promocoes/{id}/classificacoes`) e ofertas
+anteriores do mesmo parceiro (`GET /promocoes?parceiro_id=X`, limitado a 15
+com resumo do resto). Nenhum endpoint novo, nenhuma migration.
 
-Não precisa de endpoint novo nem migration — é trabalho só de tela.
+### Tarefa D — Teste de API e banco — CONCLUÍDA (18/08)
+`garimpo_test` + `pytest-asyncio` + `backend/tests/conftest.py`, com
+isolamento por SAVEPOINT. 5 testes cobrindo os fluxos onde já apareceu bug
+real: ingestão (parceiro novo + duplicata), aprovação em lote reclassificando
+quem ficou fora do lote, fila de publicação com canal não configurado, e a
+regressão do bug de regulamento da Esfera. Detalhe técnico preservado na
+seção 5 (armadilha do event loop do pytest-asyncio).
 
-### Tarefa D — Teste de API e banco
-Várias falhas caras de sessões anteriores passaram por toda a suíte de lógica
-pura e só apareceram rodando o sistema de verdade. Montar pytest-asyncio com
-banco de teste fecharia essa lacuna.
+### Tarefa E — Decidir o gancho de reclassificação na aprovação individual — CONCLUÍDA (18/08)
+Decisão: avisar em vez de reclassificar. Ver seção 5 (`aprovacoes_apos_ultima_reclassificacao`)
+e o aviso na aba Publicar.
 
-### Tarefa E — Decidir o gancho de reclassificação na aprovação individual
-Ver a pendência na seção 8. Pergunta feita ao usuário, sem resposta ainda —
-não escolher um caminho sem essa confirmação.
+### Tarefa F — Identidade visual das mensagens (ideia, não iniciada)
+Levantada pelo usuário em 18/08, inspirada num card visual de alerta de
+milhas de outro grupo (formato "ALERTA PPV": rótulo do programa isolado no
+topo, depois trecho/condições em campos rotulados — o mesmo princípio de
+"bate o olho, já identifica" que a mensagem em texto do Garimpo já segue).
+Duas frentes distintas, não confundir:
+- **Livelo/Esfera** (produto atual, Telegram): criar uma identidade visual
+  para as mensagens já publicadas hoje em texto.
+- **Emissões** (produto futuro, ainda não construído — Tarefa B): pensar o
+  formato de mensagem já nascendo pro WhatsApp, possivelmente com cards
+  visuais desde o início.
+
+Ainda sem decisão de design nem de implementação. Recomendação registrada na
+conversa: caso vire projeto, começar por uma versão em texto com a mesma
+estrutura (rótulo, campos) antes de investir num gerador de imagem — o
+card visual tem custo de produção real (template + render dinâmico) que o
+texto não tem, e vale confirmar que o formato visual realmente compensa antes
+de construir o gerador.
 
 ## 10. Roteiro da próxima sessão
 
