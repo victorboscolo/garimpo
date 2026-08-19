@@ -769,7 +769,7 @@ defasada ele some do container. `docker compose build backend` resolve.
 | Rejeitadas com classificação velha | Consistência | Baixo | `reclassificar-todas` pula REJEITADAS por desenho |
 | Canal PUBLICO sem ID | Configuração | Baixo | Só o AVANCADO existe; a fila ignora canais não configurados |
 | Comparação entre programas (mesma marca, Livelo vs Esfera) | Produto | Baixo | Registrada como possibilidade (seção 2), não como tarefa — falta decidir critério de correspondência entre `Parceiro`s |
-| Horário de atualização dos programas | Premissa | Baixo | Observar empiricamente, pros dois |
+| Horário de atualização dos programas | Premissa | Baixo (resolvido por ora, 19/08) | `created_at` não serve pra isso (só marca quando nós coletamos). Teste empírico único (recoleta às 11:45 de 19/08, ~1h30 depois do agendado): 0 novidades nas duas fontes — evidência de que a janela atual não perde nada, mas é 1 dia só. Ver seção 5 |
 | "Bankei" duplicado (Livelo) | Qualidade de dado | Resolvido (18/08) | Era dois `Parceiro` pro mesmo negócio — `codigo_externo` gravado como "ban" numa coleta e "BAN" noutra. Causa raiz corrigida (seção 5); os dois registros foram fundidos no banco (as 2 promoções passaram para o `Parceiro` com código "BAN", o duplicado e sua `Marca` órfã foram removidos) |
 | seats.aero — elegibilidade de API pendente | Bloqueio externo | Médio | Pedido enviado em 18/08 (conta Pro já existe, mas API não é automática); cobriria Smiles + Azul de uma vez se aprovado. Ver seção 5 |
 | LATAM Pass sem suporte em nenhuma ferramenta do mercado | Limitação externa | Baixo | Nem seats.aero nem AwardFares cobrem; rotina mensal automática (seção 5) avisa se isso mudar — não precisa checagem manual |
@@ -844,11 +844,23 @@ a partir do backup real do dia. Schema limpo, contagem de tabelas idêntica à
 produção, um registro batido campo a campo (inclusive UUID). Banco de
 produção nunca foi tocado durante o teste.
 
-### Tarefa I — Horário real de atualização da Livelo e da Esfera
-Hoje é só "entendimento informal" (seção 6). Com mais dias de coleta
-acumulados dá pra olhar os timestamps reais de criação e confirmar quando
-cada programa de fato atualiza — melhora a precisão do agendamento e das
-janelas de "atrasado" do Painel de Saúde (`JANELA_POR_JOB`, seção 5).
+### Tarefa I — Horário real de atualização da Livelo e da Esfera — RESOLVIDA POR ORA (19/08)
+A ideia original (olhar `promocoes.created_at` acumulado) era um beco sem
+saída: esse campo só marca quando *nós* coletamos, nunca quando a fonte
+atualiza — os dados confirmaram que ele só reflete os próprios horários
+agendados (09h-10h Livelo, 10h-12h Esfera), nada além disso.
+`data_inicio`/`data_fim` também não servem: guardam só o dia, sem hora, por
+decisão deliberada (seção 5).
+
+Teste empírico no lugar: recoletei as duas às 11:45 do dia 19/08, ~1h30
+depois do horário agendado — 0 novidades nas duas (Livelo: 0 criadas, 254
+descartadas; Esfera: 0 criadas, 163 descartadas). Não prova qual é o
+horário exato de publicação, mas é evidência real de que a régua atual não
+estava perdendo atualização nenhuma nessa janela, num dia. Decisão do
+usuário: fica assim por ora — a folga de 30h no Painel de Saúde já cobre
+bastante margem de erro sobre o horário real; se quiser mais confiança,
+repetir o mesmo teste em outro horário do dia (ex: fim de tarde) é o
+próximo passo natural, não feito ainda.
 
 ### Tarefa J — Terceiro programa de fidelidade? (pergunta em aberto, não proposta)
 Vale expandir a coleta pra um terceiro "ganhe pontos" (não é o Emissões,
