@@ -953,15 +953,34 @@ classificação automática, endpoints `POST /api/v1/emissoes/ofertas` e
 contra URLs reais capturadas ao vivo, não reconstruídas de memória.
 Achado no processo: o site principal **não tem parâmetro de classe** na
 busca (Economy e Business vêm juntas no mesmo resultado), diferente do
-`azulpelomundo` (que tem `cabinCategory`). Ver README do coletor.
+`azulpelomundo` (que tem `cabinCategory`).
+
+**Parser do `azulpelomundo` pronto** (`parsing.py` + `test_parsing.py`, 6
+testes): extrai a combinação ida+volta mais barata do JSON real de
+`GET /api/availability`, testado contra um recorte fiel de uma resposta
+capturada ao vivo. Armadilha real encontrada: `points.value` no nível do
+voo de ida é só o preço do trecho de ida sozinho — o preço da combinação
+completa mora dentro de
+`recommendations[].returnFlights[].categories[].points.value`. Confundir
+os dois faria o coletor gravar um preço maior do que o real.
+
+**Site principal, parsing ainda pendente**: confirmados os dois canais
+reais que ele usa — REST
+(`b2c-api.voeazul.com.br/tudoAzulReservationAvailability/.../v6/availability`)
+e um canal `Listen` do Firestore
+(`firestore.googleapis.com/.../Listen/channel?database=projects%2Fazul-storage-prd%2F...`).
+Os resultados renderizam certinho na tela, mas **toda busca faz reload
+completo da página**, o que impediu interceptar o payload real com as
+ferramentas de rede disponíveis nesta sessão (a chamada acontece cedo
+demais no carregamento). Precisa de DevTools de verdade numa sessão
+dedicada — não vale a pena escrever parser sem ver o dado real. Ver
+README do coletor pro detalhe completo.
 
 **Ainda faltando, nessa ordem**:
 1. Popular `rotas_emissao` com o catálogo real (lista de origens/destinos
    já discutida com o usuário, seção 5, mas os nomes/campos exatos ficaram
    como "ver com calma depois" — não populado ainda).
-2. Parsing do resultado de cada sistema — de propósito não escrito ainda,
-   falta inspecionar a resposta real (JSON do `azulpelomundo`, canal
-   Firestore do site principal) antes de codificar qualquer parser.
+2. Parsing do resultado do site principal (ver acima).
 3. Orquestração Playwright (aquecer sessão, decidir quando reaquecer,
    tratar "não temos voos disponíveis" como resultado válido, não erro).
 4. Decisões de produto que seguem em aberto: como exibir isso pro usuário
