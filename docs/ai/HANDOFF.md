@@ -1,6 +1,6 @@
 # Handoff para Claude Code
 
-> Revisado em 19/08/2026, ao fim de uma sessão de três dias. Os números aqui
+> Revisado em 20/08/2026, ao fim de uma sessão de quatro dias. Os números aqui
 > foram conferidos contra o banco na escrita, não reconstruídos de memória. A
 > seção 12 lista as afirmações de handoffs anteriores que se provaram falsas —
 > vale ler antes de confiar em qualquer documento mais antigo.
@@ -12,19 +12,20 @@ programas de fidelidade (**Livelo e Esfera**, desde 17/08/2026), calcula uma
 nota e categoria de atratividade por um motor de regras determinístico (não é
 LLM) e expõe tudo para revisão humana antes de qualquer divulgação. Existe um
 segundo produto planejado, **Garimpo Emissões** (passagens aéreas via milhas),
-**investigado nesta sessão mas ainda fora do escopo de implementação** — seção
-5 tem o mapa completo do que é viável e o que não é.
+**com arquitetura de dados inicial já criada (20/08), mas ainda sem coletor** —
+seção 5 tem o mapa completo do que é viável e o que não é.
 
 **Estágio atual**: MVP funcional de ponta a ponta rodando localmente no Mac do
 usuário, dois programas de fidelidade coletando em paralelo, automaticamente,
 sem intervenção diária. Motor calibrado com dados reais, banco, API e painel
-de revisão estão implementados e em uso. 55 commits, 103 testes automatizados
-(backend, 84 de lógica pura + 18 de integração API/banco + 1 smoke test de
+de revisão estão implementados e em uso. 61 commits, 108 testes automatizados
+(backend, 84 de lógica pura + 23 de integração API/banco + 1 smoke test de
 migration) + 43 coletor Livelo (41 + 2 do fix de caixa do `codigo_externo`) +
-9 coletor Esfera. Backup diário rodando de verdade, e o Painel de Saúde agora
-avisa no Telegram sozinho quando um job falha ou atrasa — não só mostra na tela.
+9 coletor Esfera. Backup diário rodando de verdade, o Painel de Saúde avisa no
+Telegram sozinho quando um job falha ou atrasa, e o Garimpo Emissões (só Azul,
+seats.aero fechou pro Brasil) tem schema e endpoints prontos.
 
-**O que mudou na sessão de 17–19/08**, em onze frentes:
+**O que mudou na sessão de 17–20/08**, em quinze frentes:
 
 - **Esfera no ar e publicando**: segundo programa de fidelidade, coletado por
   uma API pública sem proteção alguma. 176 aprovadas, primeiro lote publicado
@@ -72,6 +73,16 @@ avisa no Telegram sozinho quando um job falha ou atrasa — não só mostra na t
   incompatível com o `pytest` já pinado; só não quebrava porque o container
   rodando tinha uma instalação avulsa, nunca reconstruída. Corrigido; suíte
   inteira validada a partir de uma imagem reconstruída do zero.
+- **Power Nap derrubou a coleta da Livelo** (20/08): o Painel de Saúde pegou
+  de novo — terceira falha real que ele acusou desde que foi ao ar.
+  Corrigido agendando um despertar de verdade (`pmset repeat wake`).
+- **seats.aero fechado pro Brasil**: resposta definitiva, não "ainda não
+  aprovado". Usuário decidiu seguir só com a Azul.
+- **Garimpo Emissões: arquitetura inicial + achado do `azulpelomundo`**:
+  schema e endpoints prontos (sem coletor ainda); descoberto que a Azul tem
+  dois sistemas de busca — o site principal (só malha própria) e o portal
+  `azulpelomundo` (parceiros, protegido por Akamai Bot Manager). Matriz de
+  rotas fechada com o usuário.
 
 ## 2. Escopo atual e limites
 
@@ -122,7 +133,8 @@ avisa no Telegram sozinho quando um job falha ou atrasa — não só mostra na t
 | Painel admin | IMPLEMENTADO | triagem por nota, ações em lote, critérios do motor, regulamento e selos; fila de publicação com descarte; card de detalhes com histórico da nota e das ofertas anteriores do parceiro (sob demanda); aba Saúde com o status de cada job |
 | Painel de Saúde | IMPLEMENTADO | tabela `execucoes` + `GET /api/v1/saude`; coletor Livelo, coletor Esfera, recalibração e backup registram o próprio resultado ao terminar (sucesso/falha, contadores, erro); situação OK/FALHA/ATRASADA/NUNCA_RODOU por job; **aviso ativo no Telegram (19/08)**: FALHA dispara na hora, ATRASADA é checado a cada 6h (`scripts/verificar_saude.sh`) |
 | Backup | IMPLEMENTADO (18/08, corrigido 19/08) | diário via launchd (10:40), Postgres → Google Drive (camada de HD externo é opcional, só grava se já estiver montado); retenção de 30 backups na nuvem; sem criptografia (decisão, ver seção 5). Falhou na primeira execução agendada de verdade (`docker: command not found` — PATH do launchd não inclui `/usr/local/bin`); o próprio Painel de Saúde pegou, corrigido no mesmo dia |
-| Testes automatizados | PARCIAL | 103 backend (84 de lógica pura + 18 de integração API/banco + 1 smoke test de `alembic upgrade head`) + 43 coletor Livelo + 9 coletor Esfera. Cobre os fluxos onde já apareceu bug real; não é cobertura exaustiva |
+| Testes automatizados | PARCIAL | 108 backend (84 de lógica pura + 23 de integração API/banco + 1 smoke test de `alembic upgrade head`) + 43 coletor Livelo + 9 coletor Esfera. Cobre os fluxos onde já apareceu bug real; não é cobertura exaustiva |
+| Garimpo Emissões | ARQUITETURA INICIAL (20/08) | Schema (`rotas_emissao`, `ofertas_emissao`) e endpoints prontos, sem motor; catálogo de rotas ainda não populado, sem coletor. Ver seção 5 |
 | Publicação (Telegram) | IMPLEMENTADO | fila com curadoria, prévia, envio em lote, descarte, diagnóstico e aviso de divergência; mensagem por tópicos, com nome do programa |
 | Autenticação | PENDENTE | ver seção 8 |
 
@@ -692,6 +704,80 @@ por milha" (preço em milhas vs. preço em dinheiro do mesmo voo) — são coisa
 diferentes, o segundo exige também coletar o preço em dinheiro do mesmo voo,
 não feito ainda.
 
+### Garimpo Emissões — arquitetura inicial e o achado do `azulpelomundo` (20/08)
+
+Com o seats.aero fechado pro Brasil (seção anterior) e a decisão do usuário
+de seguir só com a Azul, dois avanços no mesmo dia: a matriz de rotas foi
+fechada com o usuário, e a investigação técnica revelou que a Azul tem
+**dois sistemas de busca diferentes**, não um.
+
+**O site principal (`voeazul.com.br`)** só busca a malha **própria** da
+Azul — confirmado por duas fontes: a página oficial de rotas diz
+literalmente "mais de 150 destinos no Brasil, além dos internacionais para
+Flórida, Lisboa e Paris", e um teste real (GRU→Londres) devolveu "não
+temos voos disponíveis". As parcerias de companhia aérea que a Azul tem
+(United, Air Canada, Copa, TAP, Emirates, Etihad, Turkish) são **só de
+ganhar pontos** voando com elas — não existe resgatar milhas Azul num
+voo delas por esse site.
+
+**`azulpelomundo.voeazul.com.br`** é outro sistema, achado pelo usuário
+(ele lembrava do nome) — cobre **"+3.000 destinos com Pontos Azul"**,
+incluindo voos de parceiros de verdade (testado: GRU→JFK devolveu voo
+vendido pela Avianca; GRU→Londres devolveu 10 opções, uma delas voo
+direto). Achados técnicos:
+- Protegido por **Akamai Bot Manager** (cookies `_abck`/`bm_*`) — mais
+  forte que a proteção do site principal. Bare `curl` e replay dos cookies
+  reais de uma sessão de navegador real **os dois devolvem 403** ("Access
+  Denied" do Akamai) — precisa mesmo do fingerprint de navegador
+  verdadeiro, não só dos cookies. Nunca vai dar pra chamar a API direto
+  (como fazemos com a Esfera); todo o coletor de Emissões passa por
+  automação de navegador.
+- Endpoint real: `GET /api/availability?origin=...&destination=...&cabinCategory=...`.
+- Mesmo truque de sessão do site principal funciona aqui: depois de uma
+  primeira busca pelo formulário, dá pra navegar direto pra
+  `/flights/RT/{origem}/{destino}/-/-/{data-ida}/{data-volta}/1/0/0/0/0/ALL/F/{classe}/-/-/-/-/A/-`
+  e continuar recebendo resultado, sem re-passar pelo formulário. Testado
+  6 buscas internacionais encadeadas seguidas (Londres, JFK, Madrid, Roma,
+  Miami, Los Angeles) sem nenhum bloqueio — não fui além disso hoje, o
+  teto real ainda não foi mapeado (o do site principal ficou em ~8-11).
+- **Escopo é só internacional/parceiro**: testei uma rota doméstica
+  (GRU→Salvador) nesse portal e quebrou (erro de JS, não bloqueio) —
+  Nordeste/Sul/Minas Gerais continuam sendo busca no site principal.
+
+**Matriz de rotas fechada com o usuário (20/08)**:
+- Origens: GIG, SDU, GRU, CGH, VCP
+- Cruzado SP↔RJ entre as 5 (site principal)
+- Nordeste: SSA, REC, FOR, BPS, MCZ, NAT (site principal)
+- Sul (proposta minha, aceita): POA, FLN, CWB (site principal)
+- Minas Gerais (proposta minha, aceita): CNF — é também o hub internacional
+  da própria Azul (site principal)
+- Malha própria internacional: Flórida/MCO, Lisboa/LIS, Paris/**ORY** (não
+  CDG — confirmado pelo usuário e batido com o teste real; site principal)
+- Internacional via parceiro (`azulpelomundo`): Londres/LHR, Madrid/MAD,
+  Roma/FCO, JFK, MIA, LAX. Usuário mencionou FLL como provável também —
+  não testado ainda. Porto (OPO) também ficou pendente de teste.
+- Classe: Econômica **e** Executiva
+- Datas: 30 a 180 dias à frente, amostrado em ~6 pontos (não diário — o
+  volume diário seria inviável, ver a conversa sobre cortar volume)
+- Critério de preço: **só a oferta mais barata** por rota+data+classe
+  (decisão do usuário, 19/08) — não guardar a lista inteira de voos
+  retornada.
+
+**Arquitetura implementada (20/08, ainda sem coletor)**: migration 0010,
+`domain/emissoes.py` (`RotaEmissao` — catálogo curado, campo `fonte`
+marca qual dos dois sistemas buscar; `OfertaEmissao` — imutável, uma linha
+por coleta, é o que sustenta o histórico de preço), `application/emissoes_service.py`,
+endpoints `POST /api/v1/emissoes/ofertas` (rejeita rota fora do catálogo
+em vez de criar sozinho) e `GET /api/v1/emissoes/rotas`. 5 testes de
+integração. **Reaproveita** o `Dominio` "EMISSOES" que o schema já previa,
+e cria um `Programa` "Azul" novo sob ele — não usa `Promocao` (natureza de
+dado diferente, ver docstring do módulo).
+
+**Não feito ainda**: popular `rotas_emissao` com a matriz acima (os nomes
+de campo exatos ficaram como "ver com calma depois"), o coletor de verdade
+(Playwright, falando com os dois sistemas), e qualquer decisão de tela/
+publicação — não faz sentido desenhar isso antes de ter dado fluindo.
+
 ### Exceção à imutabilidade
 
 `_completar_dados_da_campanha` preenche, numa promoção já existente, campos de
@@ -830,18 +916,29 @@ especificamente sobre a Esfera, do jeito que houve pra Livelo — vale
 perguntar, é o insumo que falta pra saber se a régua está calibrada pro
 segundo programa.
 
-### Tarefa B — Decidir o futuro do Garimpo Emissões (seats.aero fechado, 19/08)
-Investigação completa na seção 5. O seats.aero respondeu **não** — API
-indisponível pro Brasil, não é questão de esperar mais. Isso mata o cenário
-que cobria Smiles+Azul de uma vez; o que sobra é só a Azul, com coletor
-próprio (aquecer sessão, lotes de ~8 buscas, reaquecer — arquitetura já
-mapeada). Smiles (Akamai) e LATAM (login) continuam sem caminho.
+### Tarefa B — Garimpo Emissões, com a Azul — EM ANDAMENTO (decisão tomada 19-20/08)
+seats.aero respondeu **não** (API indisponível pro Brasil, 19/08) — mata o
+cenário que cobria Smiles+Azul de uma vez. Smiles (Akamai) e LATAM (login)
+seguem sem caminho. Decisão do usuário (20/08): seguir só com a Azul, é o
+que tem em mãos.
 
-**Decisão de produto ainda não tomada, e agora é o bloqueio real**: vale
-construir um coletor de Emissões que cobre só 1 de 3 programas de milhas
-aéreas? Se sim, ainda faltam decidir, antes de qualquer código: como
-guardar histórico de preço ao longo do tempo (pro sinal de "queda de
-preço") e como exibir isso pro usuário sem nota automática (seção 5).
+**Arquitetura inicial já criada (20/08)** — ver seção 5 pro detalhe técnico
+completo: tabelas `rotas_emissao` (catálogo curado) e `ofertas_emissao`
+(só a mais barata por rota+data+classe, imutável), sem motor nem
+classificação automática, endpoints `POST /api/v1/emissoes/ofertas` e
+`GET /api/v1/emissoes/rotas`. 5 testes de integração, 108 no total.
+
+**Ainda faltando, nessa ordem**:
+1. Popular `rotas_emissao` com o catálogo real (lista de origens/destinos
+   já discutida com o usuário, seção 5, mas os nomes/campos exatos ficaram
+   como "ver com calma depois" — não populado ainda).
+2. Construir o coletor de verdade (Playwright) — precisa falar com **dois**
+   sistemas (site principal da Azul + portal `azulpelomundo`, achado
+   técnico de 20/08, seção 5), cada um com sua própria lógica de
+   aquecimento de sessão. Nenhuma linha de coletor escrita ainda.
+3. Decisões de produto que seguem em aberto: como exibir isso pro usuário
+   sem nota automática, e o desenho de tela (não existe rota B, não faz
+   sentido pensar nisso antes do coletor existir).
 
 ### Tarefa C — Histórico na tela — CONCLUÍDA (18/08)
 As duas seções combinadas foram implementadas no card de "Ver detalhes",
