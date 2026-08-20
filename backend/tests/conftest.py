@@ -89,3 +89,24 @@ async def client(db):
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
     app.dependency_overrides.pop(get_db, None)
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _nunca_manda_telegram_de_verdade(monkeypatch):
+    """Trava de segurança: nenhum teste manda mensagem real pro Telegram,
+    mesmo que esqueça de mockar isso explicitamente.
+
+    Achado real (20/08): dois testes escritos antes do aviso ativo existir
+    (test_integracao_saude.py) registravam FALHA sem mockar `cliente.enviar`
+    — como o container roda com token e canal de alerta reais (do `.env`),
+    cada rodada da suíte inteira mandava duas mensagens de verdade pro
+    Telegram do usuário. `autouse` fecha essa classe de bug pra sempre: um
+    teste que queira inspecionar o envio continua podendo sobrescrever isso
+    com seu próprio `monkeypatch.setattr`, dentro do próprio corpo do teste.
+    """
+    from infrastructure.telegram import cliente
+
+    async def _nao_envia_de_verdade(tipo, texto):
+        pass
+
+    monkeypatch.setattr(cliente, "enviar", _nao_envia_de_verdade)
