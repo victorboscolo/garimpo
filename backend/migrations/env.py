@@ -11,7 +11,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from infrastructure.db.base import Base
 # Importar todos os módulos de modelos para o autogenerate enxergá-los:
-from domain import cadastros, promocoes, motor, governanca  # noqa: F401
+from domain import cadastros, promocoes, motor, governanca, emissoes  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:

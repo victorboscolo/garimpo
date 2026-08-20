@@ -33,7 +33,7 @@ from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from domain import cadastros, governanca, motor, promocoes  # noqa: F401 — popula Base.metadata
+from domain import cadastros, emissoes, governanca, motor, promocoes  # noqa: F401 — popula Base.metadata
 from infrastructure.db.base import Base
 from infrastructure.db.session import get_db
 

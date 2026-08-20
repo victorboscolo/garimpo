@@ -1,0 +1,61 @@
+"""Endpoints do Garimpo Emissões: rotas monitoradas e ofertas coletadas.
+
+Sem motor nem aprovação automática — ver application/emissoes_service.py.
+"""
+import uuid
+from datetime import date
+from decimal import Decimal
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from application import emissoes_service
+from infrastructure.db.session import get_db
+
+router = APIRouter()
+
+
+class OfertaEmissaoIn(BaseModel):
+    programa_nome: str
+    origem: str
+    destino: str
+    data_ida: date
+    classe: str
+    pontos: int
+    data_volta: date | None = None
+    taxa_reais: Decimal | None = None
+    companhia_operadora: str | None = None
+    voo_direto: bool | None = None
+
+
+@router.post("/ofertas")
+async def registrar_oferta(payload: OfertaEmissaoIn, db: AsyncSession = Depends(get_db)):
+    """Chamado pelo coletor a cada rota+data+classe pesquisada — só a oferta
+    mais barata encontrada, não a lista inteira de voos.
+    """
+    rota = await emissoes_service.resolver_rota(db, payload.programa_nome, payload.origem, payload.destino)
+    if rota is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Rota {payload.origem}-{payload.destino} não cadastrada para '{payload.programa_nome}'.",
+        )
+
+    oferta = await emissoes_service.registrar_oferta(
+        db, rota_id=rota.id, data_ida=payload.data_ida, classe=payload.classe, pontos=payload.pontos,
+        data_volta=payload.data_volta, taxa_reais=payload.taxa_reais,
+        companhia_operadora=payload.companhia_operadora, voo_direto=payload.voo_direto,
+    )
+    return {"id": str(oferta.id)}
+
+
+@router.get("/rotas")
+async def rotas(programa_nome: str | None = None, db: AsyncSession = Depends(get_db)):
+    """Catálogo de rotas ativas — o que o coletor deve pesquisar."""
+    rotas = await emissoes_service.listar_rotas_ativas(db, programa_nome)
+    return [
+        {
+            "id": str(r.id), "origem": r.origem, "destino": r.destino, "fonte": r.fonte,
+        }
+        for r in rotas
+    ]
