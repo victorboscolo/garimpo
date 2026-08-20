@@ -12,20 +12,22 @@ programas de fidelidade (**Livelo e Esfera**, desde 17/08/2026), calcula uma
 nota e categoria de atratividade por um motor de regras determinístico (não é
 LLM) e expõe tudo para revisão humana antes de qualquer divulgação. Existe um
 segundo produto planejado, **Garimpo Emissões** (passagens aéreas via milhas),
-**com arquitetura de dados inicial já criada (20/08), mas ainda sem coletor** —
-seção 5 tem o mapa completo do que é viável e o que não é.
+**com schema, endpoints e metade do coletor prontos (20/08), ainda sem
+orquestração nem dado real coletado** — seção 5 tem o mapa completo do que
+é viável e o que não é.
 
 **Estágio atual**: MVP funcional de ponta a ponta rodando localmente no Mac do
 usuário, dois programas de fidelidade coletando em paralelo, automaticamente,
 sem intervenção diária. Motor calibrado com dados reais, banco, API e painel
-de revisão estão implementados e em uso. 61 commits, 108 testes automatizados
-(backend, 84 de lógica pura + 23 de integração API/banco + 1 smoke test de
-migration) + 43 coletor Livelo (41 + 2 do fix de caixa do `codigo_externo`) +
-9 coletor Esfera. Backup diário rodando de verdade, o Painel de Saúde avisa no
-Telegram sozinho quando um job falha ou atrasa, e o Garimpo Emissões (só Azul,
-seats.aero fechou pro Brasil) tem schema e endpoints prontos.
+de revisão estão implementados e em uso. 69 commits, 108 testes automatizados
+de backend (84 de lógica pura + 23 de integração API/banco + 1 smoke test de
+migration) + 12 do coletor de Emissões + 43 coletor Livelo (41 + 2 do fix de
+caixa do `codigo_externo`) + 9 coletor Esfera. Backup diário rodando de
+verdade, o Painel de Saúde avisa no Telegram sozinho quando um job falha ou
+atrasa, e o Garimpo Emissões (só Azul, seats.aero fechou pro Brasil) já busca
+e interpreta preço real de um dos dois sistemas da Azul.
 
-**O que mudou na sessão de 17–20/08**, em quinze frentes:
+**O que mudou na sessão de 17–20/08**, em dezesseis frentes:
 
 - **Esfera no ar e publicando**: segundo programa de fidelidade, coletado por
   uma API pública sem proteção alguma. 176 aprovadas, primeiro lote publicado
@@ -79,10 +81,16 @@ seats.aero fechou pro Brasil) tem schema e endpoints prontos.
 - **seats.aero fechado pro Brasil**: resposta definitiva, não "ainda não
   aprovado". Usuário decidiu seguir só com a Azul.
 - **Garimpo Emissões: arquitetura inicial + achado do `azulpelomundo`**:
-  schema e endpoints prontos (sem coletor ainda); descoberto que a Azul tem
-  dois sistemas de busca — o site principal (só malha própria) e o portal
-  `azulpelomundo` (parceiros, protegido por Akamai Bot Manager). Matriz de
-  rotas fechada com o usuário.
+  schema e endpoints prontos; descoberto que a Azul tem dois sistemas de
+  busca — o site principal (só malha própria) e o portal `azulpelomundo`
+  (parceiros, protegido por Akamai Bot Manager). Matriz de rotas fechada
+  com o usuário.
+- **Coletor de Emissões: metade pronta, testada contra dado real**: URL de
+  busca pros dois sistemas e o parser do resultado do `azulpelomundo`
+  (extrai a combinação ida+volta mais barata de um JSON real, não
+  inventado). O parsing do site principal ficou bloqueado — toda busca
+  faz reload completo da página, o que impediu capturar o payload com as
+  ferramentas de rede disponíveis nesta sessão.
 
 ## 2. Escopo atual e limites
 
@@ -134,7 +142,7 @@ seats.aero fechou pro Brasil) tem schema e endpoints prontos.
 | Painel de Saúde | IMPLEMENTADO | tabela `execucoes` + `GET /api/v1/saude`; coletor Livelo, coletor Esfera, recalibração e backup registram o próprio resultado ao terminar (sucesso/falha, contadores, erro); situação OK/FALHA/ATRASADA/NUNCA_RODOU por job; **aviso ativo no Telegram (19/08)**: FALHA dispara na hora, ATRASADA é checado a cada 6h (`scripts/verificar_saude.sh`) |
 | Backup | IMPLEMENTADO (18/08, corrigido 19/08) | diário via launchd (10:40), Postgres → Google Drive (camada de HD externo é opcional, só grava se já estiver montado); retenção de 30 backups na nuvem; sem criptografia (decisão, ver seção 5). Falhou na primeira execução agendada de verdade (`docker: command not found` — PATH do launchd não inclui `/usr/local/bin`); o próprio Painel de Saúde pegou, corrigido no mesmo dia |
 | Testes automatizados | PARCIAL | 108 backend (84 de lógica pura + 23 de integração API/banco + 1 smoke test de `alembic upgrade head`) + 43 coletor Livelo + 9 coletor Esfera. Cobre os fluxos onde já apareceu bug real; não é cobertura exaustiva |
-| Garimpo Emissões | ARQUITETURA INICIAL (20/08) | Schema (`rotas_emissao`, `ofertas_emissao`) e endpoints prontos, sem motor; catálogo de rotas ainda não populado, sem coletor. Ver seção 5 |
+| Garimpo Emissões | EM CONSTRUÇÃO (20/08) | Schema (`rotas_emissao`, `ofertas_emissao`) e endpoints prontos, sem motor. Coletor: URL de busca + parser prontos pro `azulpelomundo` (12 testes, contra dado real); site principal só tem URL, parsing bloqueado (precisa DevTools de verdade). Catálogo de rotas ainda não populado, sem orquestração. Ver seção 5 |
 | Publicação (Telegram) | IMPLEMENTADO | fila com curadoria, prévia, envio em lote, descarte, diagnóstico e aviso de divergência; mensagem por tópicos, com nome do programa |
 | Autenticação | PENDENTE | ver seção 8 |
 
@@ -1078,15 +1086,23 @@ investigação técnica nenhuma ainda.
 1. Ler este arquivo por completo.
 2. Conferir o estado real antes de agir: `git log --oneline`, `git status`,
    `docker compose ps`, contagem por status/programa em `promocoes`. **Os
-   números da seção 3 são de 18/08 e envelhecem a cada coleta diária.**
-3. seats.aero já respondeu (negativo, API indisponível pro Brasil — 19/08).
-   Se o usuário quiser retomar Emissões, a decisão em aberto é a Tarefa B
-   (vale construir coletor cobrindo só a Azul?), não mais "esperar resposta".
-4. Conferir se as coletas automáticas (10:05 Livelo, 10:20 Esfera) rodaram e
+   números da seção 3 são de 20/08 e envelhecem a cada coleta diária.**
+3. Conferir o Painel de Saúde (aba Saúde do painel, ou `GET /api/v1/saude`)
+   antes de mais nada — se algo ficou atrasado ou falhou desde 20/08 sem
+   que o Telegram avisasse (Mac desligado o tempo todo, por exemplo), é o
+   primeiro sinal a olhar.
+4. Emissões (Tarefa B) já tem decisão tomada e trabalho em andamento — não
+   é mais "decidir se faz", é continuar de onde parou:
+   `coletor-emissoes-azul/` tem URL de busca e parser prontos pro
+   `azulpelomundo`; falta destravar o parsing do site principal (precisa
+   de DevTools de verdade pra capturar o payload real — ver README do
+   coletor e seção 5), depois popular `rotas_emissao` e escrever a
+   orquestração Playwright.
+5. Conferir se as coletas automáticas (10:05 Livelo, 10:20 Esfera) rodaram e
    quantos registros cada uma criou. Esperado: poucos por dia (dedup por
    hash); uma centena de repente indicaria hash invalidado (seção 5).
-5. Perguntar ao usuário a prioridade antes de escolher tarefa.
-6. Não alterar arquivos sem aprovação explícita.
+6. Perguntar ao usuário a prioridade antes de escolher tarefa.
+7. Não alterar arquivos sem aprovação explícita.
 
 ## 11. Leitura prioritária
 
