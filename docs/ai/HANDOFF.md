@@ -525,6 +525,26 @@ quando não existe nenhuma. Sem criptografia por ora — o banco não guarda
 credencial nem dado pessoal de terceiros, decisão revisitável se isso for
 para um servidor externo algum dia.
 
+### Bug: testes mandavam Telegram de verdade (20/08)
+
+Achado pelo próprio usuário — recebeu dois alertas reais no Telegram
+("Coletor Livelo falhou: timeout na Livelo" e "Backup falhou: disco cheio")
+que não correspondiam a nada real no Painel de Saúde nem nos logs. Causa:
+dois testes em `test_integracao_saude.py`, escritos antes do aviso ativo
+existir (Tarefa G), registravam uma `FALHA` de teste sem mockar
+`cliente.enviar` — como o container roda com `TELEGRAM_BOT_TOKEN` e
+`TELEGRAM_CANAL_ALERTA_ID` reais (do `.env`), toda rodada da suíte completa
+disparava as duas mensagens de verdade. Não sujou o banco de produção (os
+testes rodam contra `garimpo_test`, isolado) — só gerou ruído real no
+Telegram, repetido a cada vez que a suíte rodou depois da Tarefa G.
+
+Corrigido com uma fixture `autouse` em `conftest.py` que mocka
+`cliente.enviar` como no-op pra **todo** teste por padrão, não só os dois
+que causaram o problema — fecha essa classe de bug de vez. Testes que
+querem inspecionar o envio (`test_integracao_alerta_saude.py`) continuam
+podendo sobrescrever com seu próprio `monkeypatch`, validado que ainda
+funciona.
+
 ### Power Nap derrubou a coleta da Livelo — o Painel de Saúde pegou de novo (20/08)
 
 Terceiro bug real que o Painel de Saúde acusou (depois do PATH do backup em
