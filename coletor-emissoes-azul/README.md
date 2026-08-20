@@ -32,17 +32,28 @@ qual dos dois buscar pra cada rota.
 
 - `urls.py` + `test_urls.py`: monta as URLs de busca direta pros dois
   sistemas, testado contra URLs reais capturadas em 20/08 (não inventadas).
+- `parsing.py` + `test_parsing.py`: extrai a oferta mais barata (ida+volta)
+  da resposta JSON do `azulpelomundo`, testado contra um recorte fiel de
+  uma resposta real (`fixture_azul_pelo_mundo.py`). Armadilha real: o
+  `points.value` no nível do voo de ida é só o preço do trecho de ida
+  sozinho — o preço da combinação completa mora dentro de
+  `recommendations[].returnFlights[].categories[].points.value`.
 
 ## O que ainda falta — não fiz de propósito, pra não inventar estrutura
 
-- **Parsing do resultado**: preciso capturar e inspecionar de verdade a
-  resposta de cada sistema antes de escrever isso.
-  - `azulpelomundo`: o endpoint `/api/availability` devolve JSON, mas eu só
-    confirmei a URL da chamada, nunca abri o corpo da resposta.
-  - Site principal: não é REST, é um canal Firestore "Listen" — preciso
-    entender esse formato antes de escrever qualquer parser.
+- **Parsing do resultado do site principal**: confirmados os dois canais
+  reais que ele usa —
+  `b2c-api.voeazul.com.br/tudoAzulReservationAvailability/api/tudoazul/reservation/availability/v6/availability`
+  (REST) e um canal `Listen` do Firestore
+  (`firestore.googleapis.com/google.firestore.v1.Firestore/Listen/channel?database=projects%2Fazul-storage-prd%2F...`).
+  Os resultados chegam de verdade na tela nos testes manuais, mas **toda
+  busca faz reload completo da página** — isso impediu interceptar o
+  payload real com as ferramentas de rede disponíveis aqui (a chamada
+  acontece cedo demais no carregamento). Precisa de uma sessão com
+  DevTools de verdade pra capturar isso; não vale a pena escrever parser
+  sem ver o dado.
 - **Orquestração Playwright**: aquecer sessão, decidir quando reaquecer,
-  navegar pelos dois sistemas na mesma execução, tratar `f"não temos voos
+  navegar pelos dois sistemas na mesma execução, tratar `"não temos voos
   disponíveis"` como resultado válido (rota sem oferta na data, não erro).
 - **Seed de `rotas_emissao`**: a matriz de rotas foi fechada com o usuário
   (HANDOFF seção 5), mas a tabela ainda está vazia.
@@ -54,7 +65,10 @@ qual dos dois buscar pra cada rota.
 
 ```
 coletor-emissoes-azul/
-  urls.py           # monta URL de busca direta pros dois sistemas
-  test_urls.py       # 6 testes, contra URLs reais capturadas
-  requirements.txt   # playwright + httpx, mesmo padrão do coletor-nativo
+  urls.py                       # monta URL de busca direta pros dois sistemas
+  test_urls.py                   # 6 testes, contra URLs reais capturadas
+  parsing.py                     # extrai a oferta mais barata do JSON do azulpelomundo
+  test_parsing.py                # 6 testes, contra JSON real
+  fixture_azul_pelo_mundo.py     # recorte fiel de uma resposta real
+  requirements.txt               # playwright + httpx, mesmo padrão do coletor-nativo
 ```
