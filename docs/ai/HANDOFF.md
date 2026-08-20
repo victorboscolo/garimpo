@@ -513,6 +513,38 @@ quando não existe nenhuma. Sem criptografia por ora — o banco não guarda
 credencial nem dado pessoal de terceiros, decisão revisitável se isso for
 para um servidor externo algum dia.
 
+### Power Nap derrubou a coleta da Livelo — o Painel de Saúde pegou de novo (20/08)
+
+Terceiro bug real que o Painel de Saúde acusou (depois do PATH do backup em
+19/08): a coleta da Livelo falhou às 10:20 de 20/08 com
+`Page.goto: Timeout 30000ms exceeded`, mas o log mostrava a navegação
+começando às 10:14:58 — um timeout de 30s não explica 5 minutos de
+diferença entre início e erro. `pmset -g log` revelou a causa: o Mac não
+estava desligado nem em sono profundo ininterrupto — ele entrava e saía de
+**Power Nap (DarkWake)**, uma janela de manutenção breve (mDNS, Time
+Machine, esse tipo de tarefa leve), não um despertar completo:
+
+```
+10:14:54  DarkWake (Power Nap) começa
+10:14:56  Mac volta a dormir — só 2s de janela, no meio da navegação
+10:20:03  próximo DarkWake — só aí o Playwright, com CPU de novo,
+          termina de contar os 30s de timeout e desiste
+```
+
+O `launchd` tinha disparado o job da Livelo durante essa primeira janela
+curta (recuperando a execução perdida das 10:05, como sempre fez), mas o
+Chromium precisa de tempo contínuo pra carregar uma página de verdade — uma
+janela de Power Nap não garante isso. A Esfera, no mesmo intervalo, rodou
+sem problema: é uma requisição HTTP simples (sem navegador), cabe inteira
+numa janela curta.
+
+Corrigido agendando um despertar de verdade antes do horário da coleta:
+`sudo pmset repeat wake MTWTFSS 09:55:00`, dado pelo usuário (não é algo
+que eu possa rodar — exige privilégio de admin). Confirmado com
+`pmset -g sched` mostrando `Repeating power events: wake at 9:55AM`, e
+validado recoletando a Livelo manualmente — 10 criadas, 244 descartadas, 0
+falhas.
+
 ### Painel de Saúde: aviso ativo no Telegram, e dois bugs reais achados no processo (19/08)
 
 FALHA e ATRASADA não são a mesma coisa, e cada uma pede um mecanismo
@@ -778,7 +810,7 @@ defasada ele some do container. `docker compose build backend` resolve.
 | `aprovada_por` nulo | Auditoria | Baixo hoje | Depende de haver usuários; importa quando houver mais de um revisor |
 | Poucos parceiros com histórico próprio | Limitação temporária | Médio | Vale para os dois programas, mais agudo na Esfera (começou do zero em 17/08); a cascata por segmento cobre enquanto amadurece |
 | Esfera sem pontuação-base nem datas de campanha | Limitação de fonte | Médio | A API da Esfera não expõe campo limpo pra isso (seção 5); mensagens da Esfera não trazem "🗓 Validade" nem "📉 fora da campanha" até a fonte mudar |
-| Coletor depende do Mac ligado | Operacional | Baixo (19/08) | Vale pros dois coletores, recalibração e backup; se o Mac não ligar no horário, o Painel de Saúde avisa no Telegram — FALHA na hora, ATRASADA em até 6h. Ainda existe uma falha de ponta cega: se o Mac nunca ligar, nenhum job roda e nenhuma checagem de "atrasado" dispara sozinha (ela também depende de rodar) — só reduz o risco, não elimina |
+| Coletor depende do Mac ligado | Operacional | Baixo (19/08, reforçado 20/08) | Vale pros dois coletores, recalibração e backup; se o Mac não ligar no horário, o Painel de Saúde avisa no Telegram — FALHA na hora, ATRASADA em até 6h. Ainda existe uma falha de ponta cega: se o Mac nunca ligar, nenhum job roda e nenhuma checagem de "atrasado" dispara sozinha. **Achado novo em 20/08**: mesmo com o Mac "ligado" no sentido de não estar totalmente desligado, o Power Nap (DarkWake) não é acordar de verdade — corrigido com `pmset repeat wake` às 09:55, ver seção 5 |
 | Sem criptografia no backup | Segurança | Baixo | Decisão deliberada (18/08): o banco não guarda credencial nem dado pessoal de terceiros. Revisitar se for pra servidor externo |
 | Backup sem teste de restauração | Operacional | Resolvido (19/08) | Restaurado de verdade num banco isolado (`garimpo_restauracao_teste`, apagado depois) a partir do backup real de 19/08 11:22 — schema criou limpo, contagem de todas as tabelas idêntica à produção, um registro comparado campo a campo (inclusive UUID) bateu exato. Banco de produção nunca foi tocado |
 | Rejeitadas com classificação velha | Consistência | Baixo | `reclassificar-todas` pula REJEITADAS por desenho |
