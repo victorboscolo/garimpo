@@ -948,15 +948,23 @@ completo: tabelas `rotas_emissao` (catálogo curado) e `ofertas_emissao`
 classificação automática, endpoints `POST /api/v1/emissoes/ofertas` e
 `GET /api/v1/emissoes/rotas`. 5 testes de integração, 108 no total.
 
+**`coletor-emissoes-azul/` iniciado (20/08)**: `urls.py` + `test_urls.py`
+(6 testes) montam a URL de busca direta pros dois sistemas — validadas
+contra URLs reais capturadas ao vivo, não reconstruídas de memória.
+Achado no processo: o site principal **não tem parâmetro de classe** na
+busca (Economy e Business vêm juntas no mesmo resultado), diferente do
+`azulpelomundo` (que tem `cabinCategory`). Ver README do coletor.
+
 **Ainda faltando, nessa ordem**:
 1. Popular `rotas_emissao` com o catálogo real (lista de origens/destinos
    já discutida com o usuário, seção 5, mas os nomes/campos exatos ficaram
    como "ver com calma depois" — não populado ainda).
-2. Construir o coletor de verdade (Playwright) — precisa falar com **dois**
-   sistemas (site principal da Azul + portal `azulpelomundo`, achado
-   técnico de 20/08, seção 5), cada um com sua própria lógica de
-   aquecimento de sessão. Nenhuma linha de coletor escrita ainda.
-3. Decisões de produto que seguem em aberto: como exibir isso pro usuário
+2. Parsing do resultado de cada sistema — de propósito não escrito ainda,
+   falta inspecionar a resposta real (JSON do `azulpelomundo`, canal
+   Firestore do site principal) antes de codificar qualquer parser.
+3. Orquestração Playwright (aquecer sessão, decidir quando reaquecer,
+   tratar "não temos voos disponíveis" como resultado válido, não erro).
+4. Decisões de produto que seguem em aberto: como exibir isso pro usuário
    sem nota automática, e o desenho de tela (não existe rota B, não faz
    sentido pensar nisso antes do coletor existir).
 
