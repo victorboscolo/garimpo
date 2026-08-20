@@ -1063,10 +1063,10 @@ bastante margem de erro sobre o horário real; se quiser mais confiança,
 repetir o mesmo teste em outro horário do dia (ex: fim de tarde) é o
 próximo passo natural, não feito ainda.
 
-### Tarefa J — Terceiro programa de fidelidade? (pergunta em aberto, não proposta)
+### Tarefa J — Terceiro programa de fidelidade — DESCARTADA (20/08)
 Vale expandir a coleta pra um terceiro "ganhe pontos" (não é o Emissões,
-que é milhas aéreas) além de Livelo e Esfera? Sem candidato investigado
-ainda — depende de decisão do usuário antes de qualquer levantamento técnico.
+que é milhas aéreas) além de Livelo e Esfera? **Decisão do usuário: não,
+ignorar essa frente.** Não retomar sem pedido explícito novo.
 
 **Candidatos testados e descartados (19/08)**: o usuário sugeriu Shopping
 Smiles e o equivalente da Azul. Os dois foram checados de verdade
