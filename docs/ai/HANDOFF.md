@@ -12,9 +12,9 @@ programas de fidelidade (**Livelo e Esfera**, desde 17/08/2026), calcula uma
 nota e categoria de atratividade por um motor de regras determinístico (não é
 LLM) e expõe tudo para revisão humana antes de qualquer divulgação. Existe um
 segundo produto planejado, **Garimpo Emissões** (passagens aéreas via milhas),
-**com schema, endpoints e o parser dos dois sistemas de busca da Azul prontos
-(21/08), ainda sem orquestração nem dado real coletado** — seção 5 tem o
-mapa completo do que é viável e o que não é.
+**com schema, endpoints, o parser dos dois sistemas de busca da Azul e o
+catálogo de 107 rotas prontos (21/08), ainda sem orquestração nem dado
+real coletado** — seção 5 tem o mapa completo do que é viável e o que não é.
 
 **Estágio atual**: MVP funcional de ponta a ponta rodando localmente no Mac do
 usuário, dois programas de fidelidade coletando em paralelo, automaticamente,
@@ -101,6 +101,12 @@ interpretar preço real dos dois sistemas de busca da Azul.
   sistemas — revalidado empiricamente contra buscas reais (`/flights/OW/`
   no `azulpelomundo`, sem os parâmetros `c[1].*` no site principal). 22
   testes no coletor. Ver seção 5.
+- **Catálogo de rotas populado** (21/08): 107 `RotaEmissao` carregadas
+  (77 site principal + 30 azulpelomundo) a partir da matriz fechada com o
+  usuário, via `scripts_backfill/seed_rotas_emissao.py`, idempotente. A
+  linha de teste antiga (`OfertaEmissao` da era ida-e-volta, 511.980
+  pontos, com `paradas`/`assentos_restantes` nulos) foi removida — não
+  fazia sentido misturar com dado real daqui pra frente.
 
 ## 2. Escopo atual e limites
 
@@ -152,7 +158,7 @@ interpretar preço real dos dois sistemas de busca da Azul.
 | Painel de Saúde | IMPLEMENTADO | tabela `execucoes` + `GET /api/v1/saude`; coletor Livelo, coletor Esfera, recalibração e backup registram o próprio resultado ao terminar (sucesso/falha, contadores, erro); situação OK/FALHA/ATRASADA/NUNCA_RODOU por job; **aviso ativo no Telegram (19/08)**: FALHA dispara na hora, ATRASADA é checado a cada 6h (`scripts/verificar_saude.sh`) |
 | Backup | IMPLEMENTADO (18/08, corrigido 19/08) | diário via launchd (10:40), Postgres → Google Drive (camada de HD externo é opcional, só grava se já estiver montado); retenção de 30 backups na nuvem; sem criptografia (decisão, ver seção 5). Falhou na primeira execução agendada de verdade (`docker: command not found` — PATH do launchd não inclui `/usr/local/bin`); o próprio Painel de Saúde pegou, corrigido no mesmo dia |
 | Testes automatizados | PARCIAL | 108 backend (84 de lógica pura + 23 de integração API/banco + 1 smoke test de `alembic upgrade head`) + 43 coletor Livelo + 9 coletor Esfera. Cobre os fluxos onde já apareceu bug real; não é cobertura exaustiva |
-| Garimpo Emissões | EM CONSTRUÇÃO (21/08) | Schema por perna (`rotas_emissao`, `ofertas_emissao` com `paradas`/`assentos_restantes`, migration 0011) e endpoints prontos, sem motor. Coletor: URL + parser só-ida prontos pros dois sistemas da Azul (22 testes, contra dado real — `azulpelomundo` via JSON, site principal via DOM). Catálogo de rotas ainda não populado, sem orquestração Playwright. Ver seção 5 |
+| Garimpo Emissões | EM CONSTRUÇÃO (21/08) | Schema por perna (`rotas_emissao`, `ofertas_emissao` com `paradas`/`assentos_restantes`, migration 0011) e endpoints prontos, sem motor. Coletor: URL + parser só-ida prontos pros dois sistemas da Azul (22 testes, contra dado real — `azulpelomundo` via JSON, site principal via DOM). Catálogo de rotas populado (107 linhas). Falta a orquestração Playwright — nenhuma oferta real coletada ainda. Ver seção 5 |
 | Publicação (Telegram) | IMPLEMENTADO | fila com curadoria, prévia, envio em lote, descarte, diagnóstico e aviso de divergência; mensagem por tópicos, com nome do programa |
 | Autenticação | PENDENTE | ver seção 8 |
 
@@ -1077,14 +1083,24 @@ numa busca real VCP→CNF). `parsing_site_principal.py`, 9 testes contra
 `outerHTML` real (com conexão, indisponível e direto). Ver README do
 coletor pro detalhe completo.
 
+**Catálogo de rotas populado (21/08)**: `rotas_emissao` tinha 107 linhas
+carregadas via `scripts_backfill/seed_rotas_emissao.py`. A interpretação
+direcional da matriz (seção 5 tinha só a lista de cidades, não o desenho
+exato) foi confirmada com o usuário antes de gravar: os 5 aeroportos-base
+(GIG, SDU, GRU, CGH, VCP) buscam **só na direção pra fora** pros destinos
+de Nordeste/Sul/MG/internacional (95 rotas — 65 site principal + 30
+azulpelomundo), e **nos dois sentidos** entre si mesmos (RJ↔SP, tráfego
+real nas duas direções — 12 rotas, site principal). FLL e OPO ficaram de
+fora por ora (mencionados mas não testados). Script idempotente, roda de
+novo sem duplicar se o catálogo mudar.
+
 **Ainda faltando, nessa ordem**:
-1. Popular `rotas_emissao` com o catálogo real (lista de origens/destinos
-   já discutida com o usuário, seção 5, mas os nomes/campos exatos ficaram
-   como "ver com calma depois" — não populado ainda).
-2. Orquestração Playwright (aquecer sessão, decidir quando reaquecer,
-   tratar "não temos voos disponíveis"/card indisponível como resultado
-   válido, não erro).
-3. Decisões de produto que seguem em aberto: como exibir isso pro usuário
+1. Orquestração Playwright (aquecer sessão, decidir quando reaquecer,
+   navegar pelas 107 rotas × amostragem de datas, tratar "não temos voos
+   disponíveis"/card indisponível como resultado válido, não erro) —
+   prioridade atual: ter algo rodando de ponta a ponta com dado real
+   antes de investir em robustez/agendamento.
+2. Decisões de produto que seguem em aberto: como exibir isso pro usuário
    sem nota automática, e o desenho de tela (não existe rota B, não faz
    sentido pensar nisso antes do coletor existir).
 
@@ -1186,10 +1202,12 @@ investigação técnica nenhuma ainda.
    primeiro sinal a olhar.
 4. Emissões (Tarefa B): `coletor-emissoes-azul/` já tem URL + parser
    prontos pros **dois** sistemas da Azul (site principal via DOM,
-   `azulpelomundo` via JSON — ver README do coletor e seção 5). Falta
-   popular `rotas_emissao` com o catálogo real e escrever a orquestração
-   Playwright (aquecer sessão, encadear buscas, tratar indisponível como
-   resultado válido).
+   `azulpelomundo` via JSON — ver README do coletor e seção 5), e
+   `rotas_emissao` já tem as 107 rotas do catálogo carregadas. Falta
+   escrever a orquestração Playwright (aquecer sessão, encadear buscas,
+   tratar indisponível como resultado válido) — prioridade combinada com
+   o usuário (21/08): ter algo funcionando de ponta a ponta primeiro,
+   robustez/agendamento depois.
 5. Conferir se as coletas automáticas (10:05 Livelo, 10:20 Esfera) rodaram e
    quantos registros cada uma criou. Esperado: poucos por dia (dedup por
    hash); uma centena de repente indicaria hash invalidado (seção 5).
