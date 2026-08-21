@@ -8,8 +8,13 @@ pro preço em pontos e atributos `data-leg-*` com assentos restantes. Os
 dois HTMLs de fixture são `outerHTML` real, capturados ao vivo, não
 reconstruídos de memória.
 """
-from parsing_site_principal import extrair_assentos_restantes, extrair_preco_pontos, menor_preco_entre_os_cards
-from fixture_site_principal import CARD_DISPONIVEL, CARD_INDISPONIVEL
+from parsing_site_principal import (
+    extrair_assentos_restantes,
+    extrair_paradas,
+    extrair_preco_pontos,
+    menor_preco_entre_os_cards,
+)
+from fixture_site_principal import CARD_DIRETO, CARD_DISPONIVEL, CARD_INDISPONIVEL
 
 
 def test_extrai_o_preco_em_pontos_do_card_disponivel():
@@ -44,3 +49,12 @@ def test_menor_preco_ignora_indisponiveis():
 
 def test_menor_preco_sem_nenhum_disponivel():
     assert menor_preco_entre_os_cards([CARD_INDISPONIVEL, CARD_INDISPONIVEL]) is None
+
+
+def test_extrai_paradas_do_card_com_conexao():
+    assert extrair_paradas(CARD_DISPONIVEL) == 1
+
+
+def test_extrai_paradas_do_card_direto():
+    """Voo direto não tem número na frente de "Direto" — vira 0, não None."""
+    assert extrair_paradas(CARD_DIRETO) == 0

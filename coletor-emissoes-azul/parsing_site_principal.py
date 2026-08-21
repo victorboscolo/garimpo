@@ -11,6 +11,13 @@ renderizado — cada `.flight-card` tem:
 - `data-leg-remaining-seats`: assentos restantes, sinal de escassez.
 - Um card sem oferta mostra "Indisponível" e não tem o `data-test-id` do
   preço — não é erro, é uma rota sem disponibilidade nessa data.
+
+Achado de 22/08/2026: a busca virou só-ida (decisão do usuário, 21/08), mas
+o card em si não muda — os mesmos anchors continuam valendo, só que agora
+o resultado tem uma seção só (não mais duas, ida e volta separadas). O
+número de paradas mora no mesmo texto do número do voo, em dois formatos
+reais confirmados: "1 conexão    •  Voo 4450" (com conexão) e "Voo 4043
+Direto" (sem conexão, sem número na frente).
 """
 from __future__ import annotations
 
@@ -20,6 +27,8 @@ _PADRAO_PRECO = re.compile(
     r'data-test-id="fare-price fare-price-with-points"[^>]*>([\d.]+)<span class="points">pontos</span>'
 )
 _PADRAO_ASSENTOS = re.compile(r'data-leg-remaining-seats="(\d+)"')
+_PADRAO_CONEXAO = re.compile(r'(\d+)\s*conex')
+_PADRAO_DIRETO = re.compile(r'\bDireto\b')
 
 
 def extrair_preco_pontos(card_html: str) -> int | None:
@@ -37,15 +46,23 @@ def extrair_assentos_restantes(card_html: str) -> int | None:
     return int(achado.group(1)) if achado else None
 
 
-def menor_preco_entre_os_cards(cards_html: list[str]) -> int | None:
-    """O menor preço em pontos entre uma lista de cards (uma perna da
-    viagem — ida ou volta), ignorando os indisponíveis. None se nenhum
-    card da lista tem oferta.
+def extrair_paradas(card_html: str) -> int | None:
+    """Número de conexões do voo (0 = direto), ou None se o card não tem
+    nem "conexão" nem "Direto" no texto (não deveria acontecer num card
+    válido, mas não vale a pena assumir).
+    """
+    achado = _PADRAO_CONEXAO.search(card_html)
+    if achado:
+        return int(achado.group(1))
+    if _PADRAO_DIRETO.search(card_html):
+        return 0
+    return None
 
-    O site principal lista ida e volta como duas seções separadas de
-    cards (não uma combinação única por card, ao contrário do
-    azulpelomundo) — por isso o preço total da viagem é a soma do menor
-    preço de cada perna, calculado separadamente.
+
+def menor_preco_entre_os_cards(cards_html: list[str]) -> int | None:
+    """O menor preço em pontos entre uma lista de cards de uma busca
+    só-ida, ignorando os indisponíveis. None se nenhum card da lista tem
+    oferta.
     """
     precos = [extrair_preco_pontos(c) for c in cards_html]
     precos_validos = [p for p in precos if p is not None]

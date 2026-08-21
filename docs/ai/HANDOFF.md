@@ -21,7 +21,7 @@ usuário, dois programas de fidelidade coletando em paralelo, automaticamente,
 sem intervenção diária. Motor calibrado com dados reais, banco, API e painel
 de revisão estão implementados e em uso. 72 commits, 108 testes automatizados
 de backend (84 de lógica pura + 23 de integração API/banco + 1 smoke test de
-migration) + 19 do coletor de Emissões + 43 coletor Livelo (41 + 2 do fix de
+migration) + 22 do coletor de Emissões + 43 coletor Livelo (41 + 2 do fix de
 caixa do `codigo_externo`) + 9 coletor Esfera. Backup diário rodando de
 verdade, o Painel de Saúde avisa no Telegram sozinho quando um job falha ou
 atrasa, e o Garimpo Emissões (só Azul, seats.aero fechou pro Brasil) já sabe
@@ -89,7 +89,18 @@ interpretar preço real dos dois sistemas de busca da Azul.
   contra dado real: `azulpelomundo` via JSON (`GET /api/availability`),
   site principal via DOM renderizado (achado 21/08 — a rede não foi
   interceptável, mas o preço mora num `data-test-id` estável no HTML,
-  mesmo princípio do fallback de texto da Livelo). 19 testes no coletor.
+  mesmo princípio do fallback de texto da Livelo).
+- **Emissões vira por perna, não por pacote, e a busca vira só-ida de
+  verdade** (21/08, feedback do usuário depois de um teste manual de
+  ponta a ponta): uma oferta de ida sozinha tem mais alcance de público e
+  dá liberdade pro usuário. `data_volta`/`voo_direto` saíram do schema;
+  entraram `paradas` (int, número de conexões) e `assentos_restantes`
+  (migration 0011). Consequência técnica que o usuário também confirmou:
+  como o preço da ida dentro de um pacote combinado pode ser mais barato
+  que comprá-la sozinha, a busca em si precisou virar só-ida nos dois
+  sistemas — revalidado empiricamente contra buscas reais (`/flights/OW/`
+  no `azulpelomundo`, sem os parâmetros `c[1].*` no site principal). 22
+  testes no coletor. Ver seção 5.
 
 ## 2. Escopo atual e limites
 
@@ -141,7 +152,7 @@ interpretar preço real dos dois sistemas de busca da Azul.
 | Painel de Saúde | IMPLEMENTADO | tabela `execucoes` + `GET /api/v1/saude`; coletor Livelo, coletor Esfera, recalibração e backup registram o próprio resultado ao terminar (sucesso/falha, contadores, erro); situação OK/FALHA/ATRASADA/NUNCA_RODOU por job; **aviso ativo no Telegram (19/08)**: FALHA dispara na hora, ATRASADA é checado a cada 6h (`scripts/verificar_saude.sh`) |
 | Backup | IMPLEMENTADO (18/08, corrigido 19/08) | diário via launchd (10:40), Postgres → Google Drive (camada de HD externo é opcional, só grava se já estiver montado); retenção de 30 backups na nuvem; sem criptografia (decisão, ver seção 5). Falhou na primeira execução agendada de verdade (`docker: command not found` — PATH do launchd não inclui `/usr/local/bin`); o próprio Painel de Saúde pegou, corrigido no mesmo dia |
 | Testes automatizados | PARCIAL | 108 backend (84 de lógica pura + 23 de integração API/banco + 1 smoke test de `alembic upgrade head`) + 43 coletor Livelo + 9 coletor Esfera. Cobre os fluxos onde já apareceu bug real; não é cobertura exaustiva |
-| Garimpo Emissões | EM CONSTRUÇÃO (21/08) | Schema (`rotas_emissao`, `ofertas_emissao`) e endpoints prontos, sem motor. Coletor: URL + parser prontos pros dois sistemas da Azul (19 testes, contra dado real — `azulpelomundo` via JSON, site principal via DOM). Catálogo de rotas ainda não populado, sem orquestração Playwright. Ver seção 5 |
+| Garimpo Emissões | EM CONSTRUÇÃO (21/08) | Schema por perna (`rotas_emissao`, `ofertas_emissao` com `paradas`/`assentos_restantes`, migration 0011) e endpoints prontos, sem motor. Coletor: URL + parser só-ida prontos pros dois sistemas da Azul (22 testes, contra dado real — `azulpelomundo` via JSON, site principal via DOM). Catálogo de rotas ainda não populado, sem orquestração Playwright. Ver seção 5 |
 | Publicação (Telegram) | IMPLEMENTADO | fila com curadoria, prévia, envio em lote, descarte, diagnóstico e aviso de divergência; mensagem por tópicos, com nome do programa |
 | Autenticação | PENDENTE | ver seção 8 |
 
@@ -805,6 +816,71 @@ de campo exatos ficaram como "ver com calma depois"), o coletor de verdade
 (Playwright, falando com os dois sistemas), e qualquer decisão de tela/
 publicação — não faz sentido desenhar isso antes de ter dado fluindo.
 
+### Garimpo Emissões — por perna, não por pacote, e busca só-ida de verdade (21/08)
+
+Depois da arquitetura inicial (seção anterior), o usuário pediu pra fazer
+**um caso só e verificar a exibição** antes de seguir — teste manual de
+ponta a ponta com a rota GIG→MCO já validada: busca real no site
+principal → parser do DOM → `POST /api/v1/emissoes/ofertas` → conferido
+direto no banco. Funcionou (`OfertaEmissao` gravada com 511.980 pontos),
+mas o teste era ida-e-volta, e foi olhando esse resultado que o usuário
+deu quatro pontos de feedback que mudaram o modelo:
+
+1. **Rastrear por perna, não por pacote ida+volta** — uma promoção de ida
+   sozinha tem mais alcance de público e dá liberdade pro usuário não
+   ficar preso a uma data de volta específica.
+2. Pergunta sobre o significado de "AD" na operadora — é o código IATA da
+   própria Azul (confirmado decodificando o `id` do card, que traz o
+   itinerário completo em base64).
+3. **Trocar `voo_direto` (booleano) por `paradas` (inteiro)** — direto
+   vira só o caso `paradas == 0`, e a informação é estritamente maior.
+4. **Gravar assentos restantes**, quando a fonte expõe — o site principal
+   já tem esse dado no DOM (`data-leg-remaining-seats`), de graça.
+
+O ponto 1 tinha uma consequência técnica que não era óbvia à primeira
+vista, e foi levantada e confirmada com o usuário antes de implementar:
+descartar a perna de volta de uma busca ida-e-volta **não é a mesma
+coisa** que buscar só-ida de verdade, porque o preço da ida dentro de um
+pacote combinado pode ser mais barato do que comprá-la sozinha. Então a
+mudança de modelo também exigia mudar o modo de busca nos dois sistemas
+— usuário confirmou as duas coisas juntas ("1. CONFIRMADO / 2.
+CONFIRMADO").
+
+**Schema (migration 0011)**: `OfertaEmissao` perdeu `data_volta` e
+`voo_direto`, ganhou `paradas: int | None` e `assentos_restantes: int |
+None`. Só existia 1 linha na tabela no momento da migration (o teste
+manual acima) — sem dado de produção perdido. `application/emissoes_service.py`,
+`api/v1/emissoes.py` e os testes de integração foram atualizados junto;
+108 testes de backend passando.
+
+**Busca só-ida revalidada empiricamente nos dois sistemas** (não bastava
+supor o padrão a partir da versão ida-e-volta):
+
+- `azulpelomundo`: `tripType=ONE_WAY` na URL
+  (`/flights/OW/{origem}/{destino}/-/-/{data-ida}/-/1/0/0/0/0/ALL/F/{classe}/-/-/-/-/A/-`,
+  confirmado via `window.location.href` numa busca real GRU→LIS). No JSON
+  de resposta, `returnFlights` vem `null` e o `points.value` no nível do
+  próprio voo já é o preço real da perna — ao contrário da versão
+  ida-e-volta, onde esse campo era só o trecho de ida isolado e o preço
+  combinado morava um nível mais fundo. A taxa em reais também sobe um
+  nível, pra `recommendations[0].fee.total.value`. E um achado bônus:
+  `connection` é o número de conexões de verdade (uma busca real GRU→HND
+  trouxe `connection: 1` com `flightGroup` de duas pernas GRU→JFK→HND),
+  não um booleano — vira `paradas` direto, sem conversão.
+- Site principal: a URL só-ida larga os parâmetros `c[1].*` (perna de
+  volta) por completo, mantendo o resto igual (confirmado numa busca real
+  GIG→MCO). O DOM não muda — os mesmos anchors (`data-test-id`,
+  `data-leg-remaining-seats`) continuam valendo, só que a página passa a
+  ter uma seção em vez de duas. O número de paradas mora no texto do
+  card, em dois formatos reais confirmados: `"1 conexão · Voo 4450"` (com
+  conexão) e `"Voo 4043 Direto"` (sem conexão, sem número na frente,
+  confirmado numa busca real VCP→CNF).
+
+`urls.py`, `parsing.py`, `parsing_site_principal.py` e seus testes/fixtures
+foram reescritos pra só-ida, sempre contra captura real (nunca JSON ou
+HTML inventado) — 22 testes no coletor. Ver `coletor-emissoes-azul/README.md`
+pro detalhe técnico completo.
+
 ### Exceção à imutabilidade
 
 `_completar_dados_da_campanha` preenche, numa promoção já existente, campos de
@@ -949,30 +1025,35 @@ cenário que cobria Smiles+Azul de uma vez. Smiles (Akamai) e LATAM (login)
 seguem sem caminho. Decisão do usuário (20/08): seguir só com a Azul, é o
 que tem em mãos.
 
-**Arquitetura inicial já criada (20/08)** — ver seção 5 pro detalhe técnico
-completo: tabelas `rotas_emissao` (catálogo curado) e `ofertas_emissao`
-(só a mais barata por rota+data+classe, imutável), sem motor nem
-classificação automática, endpoints `POST /api/v1/emissoes/ofertas` e
-`GET /api/v1/emissoes/rotas`. 5 testes de integração, 108 no total.
+**Arquitetura inicial criada (20/08), depois revisada por perna (21/08)** —
+ver seção 5 pro detalhe técnico completo. Tabelas `rotas_emissao`
+(catálogo curado) e `ofertas_emissao` (só a mais barata por
+rota+data+classe, imutável, agora com `paradas`/`assentos_restantes` em
+vez de `data_volta`/`voo_direto` — migration 0011, decisão do usuário
+depois de um teste manual de ponta a ponta), sem motor nem classificação
+automática, endpoints `POST /api/v1/emissoes/ofertas` e
+`GET /api/v1/emissoes/rotas`. 108 testes de backend no total.
 
-**`coletor-emissoes-azul/` iniciado (20/08)**: `urls.py` + `test_urls.py`
-(6 testes) montam a URL de busca direta pros dois sistemas — validadas
-contra URLs reais capturadas ao vivo, não reconstruídas de memória.
-Achado no processo: o site principal **não tem parâmetro de classe** na
-busca (Economy e Business vêm juntas no mesmo resultado), diferente do
+**`coletor-emissoes-azul/` construído (20-21/08), busca sempre só-ida
+desde 21/08**: `urls.py` + `test_urls.py` (7 testes) montam a URL de busca
+direta pros dois sistemas, sempre em modo só-ida — validadas contra URLs
+reais capturadas ao vivo, não reconstruídas de memória. Achado no
+processo: o site principal **não tem parâmetro de classe** na busca
+(Economy e Business vêm juntas no mesmo resultado), diferente do
 `azulpelomundo` (que tem `cabinCategory`).
 
 **Parser do `azulpelomundo` pronto** (`parsing.py` + `test_parsing.py`, 6
-testes): extrai a combinação ida+volta mais barata do JSON real de
-`GET /api/availability`, testado contra um recorte fiel de uma resposta
-capturada ao vivo. Armadilha real encontrada: `points.value` no nível do
-voo de ida é só o preço do trecho de ida sozinho — o preço da combinação
-completa mora dentro de
-`recommendations[].returnFlights[].categories[].points.value`. Confundir
-os dois faria o coletor gravar um preço maior do que o real.
+testes): extrai o voo de ida mais barato do JSON real de
+`GET /api/availability?tripType=ONE_WAY`, testado contra recortes fiéis de
+respostas capturadas ao vivo. Numa busca só-ida `returnFlights` vem `null`
+e `points.value` no nível do próprio voo já é o preço real — sem a
+armadilha que existia na versão ida-e-volta (não usada mais), onde esse
+mesmo campo era só o trecho de ida isolado. `connection` é o número de
+conexões de verdade (confirmado com uma resposta real de duas pernas),
+não um booleano — vira `paradas` sem conversão.
 
-**Site principal, parsing DESTRAVADO (21/08)**: confirmados os dois canais
-reais que ele usa — REST
+**Site principal, parsing DESTRAVADO (21/08), busca só-ida confirmada (21/08)**:
+confirmados os dois canais reais que ele usa — REST
 (`b2c-api.voeazul.com.br/tudoAzulReservationAvailability/.../v6/availability`)
 e um canal `Listen` do Firestore
 (`firestore.googleapis.com/.../Listen/channel?database=projects%2Fazul-storage-prd%2F...`)
@@ -987,12 +1068,14 @@ desconto — os dois aparecem juntos, não confundir) e
 `data-leg-remaining-seats` com assentos restantes — sinal de escassez que o
 `azulpelomundo` não dá. O `id` do card, decodificado em base64 URL-safe,
 ainda traz o itinerário completo (voos, aeroportos, horários); registrado
-mas não usado no parser por ora. Achado estrutural importante: aqui ida e
-volta são **duas seções de cards separadas**, não uma combinação por card
-como no `azulpelomundo` — o preço total da viagem é a soma do menor preço
-de cada seção. `parsing_site_principal.py`, 7 testes contra `outerHTML`
-real (disponível e indisponível). Ver README do coletor pro detalhe
-completo.
+mas não usado no parser por ora. A URL só-ida larga os parâmetros
+`c[1].*` por completo (confirmado numa busca real GIG→MCO); o card não
+muda, só a página passa a ter uma seção em vez de duas. O número de
+paradas mora no texto do card, em dois formatos reais confirmados: "1
+conexão · Voo 4450" e "Voo 4043 Direto" (sem número na frente, confirmado
+numa busca real VCP→CNF). `parsing_site_principal.py`, 9 testes contra
+`outerHTML` real (com conexão, indisponível e direto). Ver README do
+coletor pro detalhe completo.
 
 **Ainda faltando, nessa ordem**:
 1. Popular `rotas_emissao` com o catálogo real (lista de origens/destinos
@@ -1000,7 +1083,7 @@ completo.
    como "ver com calma depois" — não populado ainda).
 2. Orquestração Playwright (aquecer sessão, decidir quando reaquecer,
    tratar "não temos voos disponíveis"/card indisponível como resultado
-   válido, não erro; somar ida+volta no site principal).
+   válido, não erro).
 3. Decisões de produto que seguem em aberto: como exibir isso pro usuário
    sem nota automática, e o desenho de tela (não existe rota B, não faz
    sentido pensar nisso antes do coletor existir).

@@ -1,37 +1,39 @@
 """Extrai a oferta mais barata da resposta de GET /api/availability do
-portal azulpelomundo.
+portal azulpelomundo, busca só-ida (tripType=ONE_WAY).
 
-Estrutura da resposta (mapeada em 20/08/2026 contra uma resposta real, ver
-fixture_azul_pelo_mundo.py): cada voo de ida em `departureFlights.flights`
-tem um `points.value` no próprio nível — mas esse é só o preço do trecho de
-ida sozinho, sempre maior que o preço combinado real. O preço da
-combinação ida+volta que interessa mora dentro de
-`recommendations[].returnFlights[].categories[].points.value`. Ignorar essa
-diferença faria o coletor gravar um preço maior do que o site realmente
-oferece.
+Achado empírico (21/08/2026, ver fixture_azul_pelo_mundo.py): numa busca
+só-ida `returnFlights` vem `null` e o `points.value` no nível do próprio
+voo já é o preço real da perna — diferente da busca ida-e-volta (não usada
+mais, decisão do usuário 21/08), onde esse mesmo campo era só o trecho de
+ida isolado e o preço real da combinação morava um nível mais fundo, dentro
+de `recommendations[].returnFlights[].categories[]`. A taxa em reais agora
+mora um nível mais raso, em `recommendations[0].fee.total.value`.
+
+`connection` é o número de conexões de verdade, não um booleano — resposta
+real GRU->HND trouxe `connection: 1` com um `flightGroup` de duas pernas
+(GRU->JFK->HND). Por isso vira `paradas` direto, sem conversão pra bool.
 """
 from __future__ import annotations
 
 
 def extrair_mais_barata_azul_pelo_mundo(resposta: dict) -> dict | None:
-    """Varre todas as combinações ida+volta e devolve a mais barata em
-    pontos, ou None se a resposta não tem nenhum voo.
+    """Varre os voos de ida e devolve o mais barato em pontos, ou None se a
+    resposta não tem nenhum voo.
     """
-    voos_ida = resposta.get("data", {}).get("departureFlights", {}).get("flights", [])
+    voos = resposta.get("data", {}).get("departureFlights", {}).get("flights", [])
 
     melhor = None
-    for ida in voos_ida:
-        for recomendacao in ida.get("recommendations", []):
-            for volta in recomendacao.get("returnFlights", []):
-                for categoria in volta.get("categories", []):
-                    pontos = categoria.get("points", {}).get("value")
-                    if pontos is None:
-                        continue
-                    if melhor is None or pontos < melhor["pontos"]:
-                        melhor = {
-                            "pontos": int(pontos),
-                            "taxa_reais": categoria.get("fee", {}).get("total", {}).get("value"),
-                            "companhia_operadora": ida.get("marketingCarrier"),
-                            "voo_direto": ida.get("connection") == 0,
-                        }
+    for voo in voos:
+        pontos = voo.get("points", {}).get("value")
+        if pontos is None:
+            continue
+        if melhor is None or pontos < melhor["pontos"]:
+            recomendacoes = voo.get("recommendations", [])
+            taxa = recomendacoes[0].get("fee", {}).get("total", {}).get("value") if recomendacoes else None
+            melhor = {
+                "pontos": int(pontos),
+                "taxa_reais": taxa,
+                "companhia_operadora": voo.get("marketingCarrier"),
+                "paradas": voo.get("connection"),
+            }
     return melhor
