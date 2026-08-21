@@ -158,7 +158,7 @@ interpretar preço real dos dois sistemas de busca da Azul.
 | Painel de Saúde | IMPLEMENTADO | tabela `execucoes` + `GET /api/v1/saude`; coletor Livelo, coletor Esfera, recalibração e backup registram o próprio resultado ao terminar (sucesso/falha, contadores, erro); situação OK/FALHA/ATRASADA/NUNCA_RODOU por job; **aviso ativo no Telegram (19/08)**: FALHA dispara na hora, ATRASADA é checado a cada 6h (`scripts/verificar_saude.sh`) |
 | Backup | IMPLEMENTADO (18/08, corrigido 19/08) | diário via launchd (10:40), Postgres → Google Drive (camada de HD externo é opcional, só grava se já estiver montado); retenção de 30 backups na nuvem; sem criptografia (decisão, ver seção 5). Falhou na primeira execução agendada de verdade (`docker: command not found` — PATH do launchd não inclui `/usr/local/bin`); o próprio Painel de Saúde pegou, corrigido no mesmo dia |
 | Testes automatizados | PARCIAL | 108 backend (84 de lógica pura + 23 de integração API/banco + 1 smoke test de `alembic upgrade head`) + 43 coletor Livelo + 9 coletor Esfera. Cobre os fluxos onde já apareceu bug real; não é cobertura exaustiva |
-| Garimpo Emissões | EM CONSTRUÇÃO (21/08) | Schema por perna (`rotas_emissao`, `ofertas_emissao` com `paradas`/`assentos_restantes`, migration 0011) e endpoints prontos, sem motor. Coletor: URL + parser só-ida prontos pros dois sistemas da Azul (22 testes, contra dado real — `azulpelomundo` via JSON, site principal via DOM). Catálogo de rotas populado (107 linhas). Falta a orquestração Playwright — nenhuma oferta real coletada ainda. Ver seção 5 |
+| Garimpo Emissões | EM CONSTRUÇÃO (21/08) | Schema por perna (`rotas_emissao`, `ofertas_emissao` com `paradas`/`assentos_restantes`, migration 0011) e endpoints prontos, sem motor. Coletor: URL + parser só-ida prontos pros dois sistemas da Azul (22 testes, contra dado real). Catálogo de rotas populado (107 linhas). Orquestração Playwright escrita (`coletor_emissoes_azul.py`) mas bloqueada por rate-limit no fim do dia 21/08, ainda não rodou com sucesso de ponta a ponta — retomar amanhã. Nenhuma oferta real coletada ainda. Ver seção 5 |
 | Publicação (Telegram) | IMPLEMENTADO | fila com curadoria, prévia, envio em lote, descarte, diagnóstico e aviso de divergência; mensagem por tópicos, com nome do programa |
 | Autenticação | PENDENTE | ver seção 8 |
 
@@ -1094,13 +1094,49 @@ real nas duas direções — 12 rotas, site principal). FLL e OPO ficaram de
 fora por ora (mencionados mas não testados). Script idempotente, roda de
 novo sem duplicar se o catálogo mudar.
 
+**Orquestração Playwright escrita (21/08), mas ainda não validada rodando de
+verdade**: `coletor_emissoes_azul.py`, escopo pequeno de propósito (decisão
+do usuário, 21/08 — "a ideia é começar a ver algo funcionando", não as 107
+rotas de uma vez): `--limite N` rotas por fonte (padrão 2), lidas do
+catálogo real via `GET /api/v1/emissoes/rotas`; uma classe (Economy) e uma
+data só por rota (amostragem de datas fica pra depois). Cada peça da
+automação foi validada ao vivo, manualmente, antes de virar código: seleção
+de origem/destino por autocomplete (site principal usa `role=option`,
+texto começa com o código; azulpelomundo usa `role=link`, texto contém
+"(CÓDIGO)"), seleção de data no site principal via atributo
+`data-date="YYYY-MM-DD"` nos botões do calendário (achado 21/08 — mais
+estável que navegar por classe CSS, que é hash de styled-components e
+muda a cada build), captura da resposta de rede do azulpelomundo via
+`page.expect_response`.
+
+**Bloqueado por rate-limit no fim do dia (21/08)**: ao rodar o script de
+verdade (não mais só manualmente), os dois sistemas recusaram a sessão —
+site principal devolveu uma página própria "Ops! Só um momento,
+identificamos um comportamento incomum vindo do seu IP" (bloqueio brando,
+por IP) e o azulpelomundo devolveu "Access Denied" direto do Akamai
+(bloqueio forte). Não é bug no script: é o teto de requisições por IP que
+já estava registrado ("~10 buscas por sessão" no site principal), e só os
+testes manuais de hoje (várias buscas em GIG-MCO, VCP-CNF, GRU-HND,
+GRU-LIS, REC-CNF, REC-LHR pelo navegador do Claude Code, mais duas
+tentativas do script) já passaram bastante disso, tudo no mesmo IP deste
+Mac. Dois pontos ficam em aberto pra próxima sessão:
+1. Quanto tempo o bloqueio dura — não testado ainda, precisa esperar e
+   tentar de novo.
+2. Se o **script Playwright puro** (fora do navegador do Claude Code)
+   passa pela proteção quando não está sob rate-limit — cada peça da
+   automação foi validada manualmente pelo navegador do Claude Code, mas
+   a primeira vez que o script isolado rodou de verdade já foi sob cota
+   estourada, então essa validação específica (fingerprint de um
+   Playwright "cru", sem o navegador do Claude Code) ainda não aconteceu.
+
 **Ainda faltando, nessa ordem**:
-1. Orquestração Playwright (aquecer sessão, decidir quando reaquecer,
-   navegar pelas 107 rotas × amostragem de datas, tratar "não temos voos
-   disponíveis"/card indisponível como resultado válido, não erro) —
-   prioridade atual: ter algo rodando de ponta a ponta com dado real
-   antes de investir em robustez/agendamento.
-2. Decisões de produto que seguem em aberto: como exibir isso pro usuário
+1. Rodar `coletor_emissoes_azul.py --limite 1` de novo depois de um tempo
+   de espera, pra separar o que é rate-limit de hoje do que seria um
+   problema de verdade no script.
+2. Se passar: aumentar `--limite` aos poucos, depois pensar em amostragem
+   de datas, Business, e robustez/agendamento — nessa ordem, não tudo de
+   uma vez.
+3. Decisões de produto que seguem em aberto: como exibir isso pro usuário
    sem nota automática, e o desenho de tela (não existe rota B, não faz
    sentido pensar nisso antes do coletor existir).
 
@@ -1200,14 +1236,16 @@ investigação técnica nenhuma ainda.
    antes de mais nada — se algo ficou atrasado ou falhou desde 20/08 sem
    que o Telegram avisasse (Mac desligado o tempo todo, por exemplo), é o
    primeiro sinal a olhar.
-4. Emissões (Tarefa B): `coletor-emissoes-azul/` já tem URL + parser
-   prontos pros **dois** sistemas da Azul (site principal via DOM,
-   `azulpelomundo` via JSON — ver README do coletor e seção 5), e
-   `rotas_emissao` já tem as 107 rotas do catálogo carregadas. Falta
-   escrever a orquestração Playwright (aquecer sessão, encadear buscas,
-   tratar indisponível como resultado válido) — prioridade combinada com
-   o usuário (21/08): ter algo funcionando de ponta a ponta primeiro,
-   robustez/agendamento depois.
+4. Emissões (Tarefa B), primeira coisa a tentar: `coletor_emissoes_azul.py`
+   já existe e roda com `--limite N` rotas por fonte (padrão 2), mas a
+   primeira execução de verdade no fim de 21/08 tomou rate-limit dos dois
+   sistemas (site principal e azulpelomundo) — provavelmente esgotado
+   pelo volume de testes manuais do próprio dia, não um bug de código
+   (seção 5 tem o detalhe completo e o HTML real do bloqueio). Rodar
+   `./venv/bin/python3 coletor_emissoes_azul.py --limite 1` de novo é o
+   primeiro passo: se passar, o próximo é aumentar `--limite` aos poucos;
+   se continuar bloqueado, precisa investigar quanto tempo o rate-limit
+   dura.
 5. Conferir se as coletas automáticas (10:05 Livelo, 10:20 Esfera) rodaram e
    quantos registros cada uma criou. Esperado: poucos por dia (dedup por
    hash); uma centena de repente indicaria hash invalidado (seção 5).
