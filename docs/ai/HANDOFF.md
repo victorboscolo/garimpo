@@ -1,6 +1,6 @@
 # Handoff para Claude Code
 
-> Revisado em 20/08/2026, ao fim de uma sessão de quatro dias. Os números aqui
+> Revisado em 21/08/2026, ao fim de uma sessão de cinco dias. Os números aqui
 > foram conferidos contra o banco na escrita, não reconstruídos de memória. A
 > seção 12 lista as afirmações de handoffs anteriores que se provaram falsas —
 > vale ler antes de confiar em qualquer documento mais antigo.
@@ -12,22 +12,22 @@ programas de fidelidade (**Livelo e Esfera**, desde 17/08/2026), calcula uma
 nota e categoria de atratividade por um motor de regras determinístico (não é
 LLM) e expõe tudo para revisão humana antes de qualquer divulgação. Existe um
 segundo produto planejado, **Garimpo Emissões** (passagens aéreas via milhas),
-**com schema, endpoints e metade do coletor prontos (20/08), ainda sem
-orquestração nem dado real coletado** — seção 5 tem o mapa completo do que
-é viável e o que não é.
+**com schema, endpoints e o parser dos dois sistemas de busca da Azul prontos
+(21/08), ainda sem orquestração nem dado real coletado** — seção 5 tem o
+mapa completo do que é viável e o que não é.
 
 **Estágio atual**: MVP funcional de ponta a ponta rodando localmente no Mac do
 usuário, dois programas de fidelidade coletando em paralelo, automaticamente,
 sem intervenção diária. Motor calibrado com dados reais, banco, API e painel
-de revisão estão implementados e em uso. 69 commits, 108 testes automatizados
+de revisão estão implementados e em uso. 72 commits, 108 testes automatizados
 de backend (84 de lógica pura + 23 de integração API/banco + 1 smoke test de
-migration) + 12 do coletor de Emissões + 43 coletor Livelo (41 + 2 do fix de
+migration) + 19 do coletor de Emissões + 43 coletor Livelo (41 + 2 do fix de
 caixa do `codigo_externo`) + 9 coletor Esfera. Backup diário rodando de
 verdade, o Painel de Saúde avisa no Telegram sozinho quando um job falha ou
-atrasa, e o Garimpo Emissões (só Azul, seats.aero fechou pro Brasil) já busca
-e interpreta preço real de um dos dois sistemas da Azul.
+atrasa, e o Garimpo Emissões (só Azul, seats.aero fechou pro Brasil) já sabe
+interpretar preço real dos dois sistemas de busca da Azul.
 
-**O que mudou na sessão de 17–20/08**, em dezesseis frentes:
+**O que mudou na sessão de 17–21/08**, em dezessete frentes:
 
 - **Esfera no ar e publicando**: segundo programa de fidelidade, coletado por
   uma API pública sem proteção alguma. 176 aprovadas, primeiro lote publicado
@@ -85,12 +85,11 @@ e interpreta preço real de um dos dois sistemas da Azul.
   busca — o site principal (só malha própria) e o portal `azulpelomundo`
   (parceiros, protegido por Akamai Bot Manager). Matriz de rotas fechada
   com o usuário.
-- **Coletor de Emissões: metade pronta, testada contra dado real**: URL de
-  busca pros dois sistemas e o parser do resultado do `azulpelomundo`
-  (extrai a combinação ida+volta mais barata de um JSON real, não
-  inventado). O parsing do site principal ficou bloqueado — toda busca
-  faz reload completo da página, o que impediu capturar o payload com as
-  ferramentas de rede disponíveis nesta sessão.
+- **Coletor de Emissões: URL + parser prontos pros dois sistemas**, testados
+  contra dado real: `azulpelomundo` via JSON (`GET /api/availability`),
+  site principal via DOM renderizado (achado 21/08 — a rede não foi
+  interceptável, mas o preço mora num `data-test-id` estável no HTML,
+  mesmo princípio do fallback de texto da Livelo). 19 testes no coletor.
 
 ## 2. Escopo atual e limites
 
@@ -142,7 +141,7 @@ e interpreta preço real de um dos dois sistemas da Azul.
 | Painel de Saúde | IMPLEMENTADO | tabela `execucoes` + `GET /api/v1/saude`; coletor Livelo, coletor Esfera, recalibração e backup registram o próprio resultado ao terminar (sucesso/falha, contadores, erro); situação OK/FALHA/ATRASADA/NUNCA_RODOU por job; **aviso ativo no Telegram (19/08)**: FALHA dispara na hora, ATRASADA é checado a cada 6h (`scripts/verificar_saude.sh`) |
 | Backup | IMPLEMENTADO (18/08, corrigido 19/08) | diário via launchd (10:40), Postgres → Google Drive (camada de HD externo é opcional, só grava se já estiver montado); retenção de 30 backups na nuvem; sem criptografia (decisão, ver seção 5). Falhou na primeira execução agendada de verdade (`docker: command not found` — PATH do launchd não inclui `/usr/local/bin`); o próprio Painel de Saúde pegou, corrigido no mesmo dia |
 | Testes automatizados | PARCIAL | 108 backend (84 de lógica pura + 23 de integração API/banco + 1 smoke test de `alembic upgrade head`) + 43 coletor Livelo + 9 coletor Esfera. Cobre os fluxos onde já apareceu bug real; não é cobertura exaustiva |
-| Garimpo Emissões | EM CONSTRUÇÃO (20/08) | Schema (`rotas_emissao`, `ofertas_emissao`) e endpoints prontos, sem motor. Coletor: URL de busca + parser prontos pro `azulpelomundo` (12 testes, contra dado real); site principal só tem URL, parsing bloqueado (precisa DevTools de verdade). Catálogo de rotas ainda não populado, sem orquestração. Ver seção 5 |
+| Garimpo Emissões | EM CONSTRUÇÃO (21/08) | Schema (`rotas_emissao`, `ofertas_emissao`) e endpoints prontos, sem motor. Coletor: URL + parser prontos pros dois sistemas da Azul (19 testes, contra dado real — `azulpelomundo` via JSON, site principal via DOM). Catálogo de rotas ainda não populado, sem orquestração Playwright. Ver seção 5 |
 | Publicação (Telegram) | IMPLEMENTADO | fila com curadoria, prévia, envio em lote, descarte, diagnóstico e aviso de divergência; mensagem por tópicos, com nome do programa |
 | Autenticação | PENDENTE | ver seção 8 |
 
@@ -972,26 +971,37 @@ completa mora dentro de
 `recommendations[].returnFlights[].categories[].points.value`. Confundir
 os dois faria o coletor gravar um preço maior do que o real.
 
-**Site principal, parsing ainda pendente**: confirmados os dois canais
+**Site principal, parsing DESTRAVADO (21/08)**: confirmados os dois canais
 reais que ele usa — REST
 (`b2c-api.voeazul.com.br/tudoAzulReservationAvailability/.../v6/availability`)
 e um canal `Listen` do Firestore
-(`firestore.googleapis.com/.../Listen/channel?database=projects%2Fazul-storage-prd%2F...`).
-Os resultados renderizam certinho na tela, mas **toda busca faz reload
-completo da página**, o que impediu interceptar o payload real com as
-ferramentas de rede disponíveis nesta sessão (a chamada acontece cedo
-demais no carregamento). Precisa de DevTools de verdade numa sessão
-dedicada — não vale a pena escrever parser sem ver o dado real. Ver
-README do coletor pro detalhe completo.
+(`firestore.googleapis.com/.../Listen/channel?database=projects%2Fazul-storage-prd%2F...`)
+— mas nenhum dos dois foi interceptável com as ferramentas de rede
+disponíveis (toda busca faz reload completo da página, a chamada acontece
+cedo demais no carregamento). Contornado do mesmo jeito que a Livelo: **lendo
+o DOM já renderizado**, não a rede.
+
+Cada `.flight-card` tem `data-test-id="fare-price fare-price-with-points"`
+com o preço real (o `.initial` no mesmo card é o preço riscado antes do
+desconto — os dois aparecem juntos, não confundir) e
+`data-leg-remaining-seats` com assentos restantes — sinal de escassez que o
+`azulpelomundo` não dá. O `id` do card, decodificado em base64 URL-safe,
+ainda traz o itinerário completo (voos, aeroportos, horários); registrado
+mas não usado no parser por ora. Achado estrutural importante: aqui ida e
+volta são **duas seções de cards separadas**, não uma combinação por card
+como no `azulpelomundo` — o preço total da viagem é a soma do menor preço
+de cada seção. `parsing_site_principal.py`, 7 testes contra `outerHTML`
+real (disponível e indisponível). Ver README do coletor pro detalhe
+completo.
 
 **Ainda faltando, nessa ordem**:
 1. Popular `rotas_emissao` com o catálogo real (lista de origens/destinos
    já discutida com o usuário, seção 5, mas os nomes/campos exatos ficaram
    como "ver com calma depois" — não populado ainda).
-2. Parsing do resultado do site principal (ver acima).
-3. Orquestração Playwright (aquecer sessão, decidir quando reaquecer,
-   tratar "não temos voos disponíveis" como resultado válido, não erro).
-4. Decisões de produto que seguem em aberto: como exibir isso pro usuário
+2. Orquestração Playwright (aquecer sessão, decidir quando reaquecer,
+   tratar "não temos voos disponíveis"/card indisponível como resultado
+   válido, não erro; somar ida+volta no site principal).
+3. Decisões de produto que seguem em aberto: como exibir isso pro usuário
    sem nota automática, e o desenho de tela (não existe rota B, não faz
    sentido pensar nisso antes do coletor existir).
 
@@ -1091,13 +1101,12 @@ investigação técnica nenhuma ainda.
    antes de mais nada — se algo ficou atrasado ou falhou desde 20/08 sem
    que o Telegram avisasse (Mac desligado o tempo todo, por exemplo), é o
    primeiro sinal a olhar.
-4. Emissões (Tarefa B) já tem decisão tomada e trabalho em andamento — não
-   é mais "decidir se faz", é continuar de onde parou:
-   `coletor-emissoes-azul/` tem URL de busca e parser prontos pro
-   `azulpelomundo`; falta destravar o parsing do site principal (precisa
-   de DevTools de verdade pra capturar o payload real — ver README do
-   coletor e seção 5), depois popular `rotas_emissao` e escrever a
-   orquestração Playwright.
+4. Emissões (Tarefa B): `coletor-emissoes-azul/` já tem URL + parser
+   prontos pros **dois** sistemas da Azul (site principal via DOM,
+   `azulpelomundo` via JSON — ver README do coletor e seção 5). Falta
+   popular `rotas_emissao` com o catálogo real e escrever a orquestração
+   Playwright (aquecer sessão, encadear buscas, tratar indisponível como
+   resultado válido).
 5. Conferir se as coletas automáticas (10:05 Livelo, 10:20 Esfera) rodaram e
    quantos registros cada uma criou. Esperado: poucos por dia (dedup por
    hash); uma centena de repente indicaria hash invalidado (seção 5).
