@@ -48,10 +48,19 @@ class RotaEmissao(Base):
 
 
 class OfertaEmissao(Base):
-    """O preço em milhas mais barato encontrado para uma rota+data+classe,
-    numa coleta. Só o mais barato — decisão do usuário (19/08): buscar traz
-    várias opções de horário/conexão, mas o sinal que importa aqui é "qual o
-    menor preço hoje", não a lista inteira.
+    """O preço em milhas mais barato encontrado para uma perna (trecho de
+    ida, uma direção só) numa rota+data+classe, numa coleta. Só o mais
+    barato — decisão do usuário (19/08): buscar traz várias opções de
+    horário/conexão, mas o sinal que importa aqui é "qual o menor preço
+    hoje", não a lista inteira.
+
+    Por perna, não por pacote ida+volta — decisão do usuário (21/08): uma
+    promoção de ida sozinha tem mais alcance de público e dá liberdade pro
+    usuário não ficar preso a uma data de volta específica. Uma "oferta de
+    volta" é só outra `OfertaEmissao`, na direção oposta — não um par
+    amarrado na mesma linha. Por isso a busca também precisa ser só-ida de
+    verdade, não ida-e-volta com a volta descartada: o preço da ida dentro
+    de um pacote combinado pode ser mais barato do que comprá-la sozinha.
 
     Imutável: cada coleta cria uma linha nova, nunca atualiza uma existente
     — mesmo princípio do Promoções, e aqui é ainda mais essencial, porque o
@@ -63,12 +72,18 @@ class OfertaEmissao(Base):
     rota_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("rotas_emissao.id"), nullable=False)
 
     data_ida: Mapped[date] = mapped_column(Date, nullable=False)
-    data_volta: Mapped[date | None] = mapped_column(Date)
     classe: Mapped[str] = mapped_column(String(20), nullable=False)  # ECONOMY | BUSINESS
 
     pontos: Mapped[int] = mapped_column(Integer, nullable=False)
     taxa_reais: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     companhia_operadora: Mapped[str | None] = mapped_column(String(100))
-    voo_direto: Mapped[bool | None] = mapped_column(Boolean)
+    # 0 = voo direto, 1+ = número de conexões. Substituiu um `voo_direto`
+    # booleano (decisão do usuário, 21/08) — estritamente mais informativo,
+    # direto vira só `paradas == 0`.
+    paradas: Mapped[int | None] = mapped_column(Integer)
+    # Sinal de escassez, quando a fonte expõe (site principal expõe a
+    # contagem exata; azulpelomundo só um booleano — nesse caso fica None
+    # aqui e o booleano vira sinal à parte, não inventado como número).
+    assentos_restantes: Mapped[int | None] = mapped_column(Integer)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)

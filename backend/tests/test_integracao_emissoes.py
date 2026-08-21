@@ -2,10 +2,14 @@
 
 Sem motor, sem dedup por hash — cada POST cria uma linha nova (histórico de
 preço é o dado). `rotas_emissao` é catálogo curado; uma rota fora dele é
-rejeitada, não criada na hora.
+rejeitada, não criada na hora. Por perna, só ida (decisão do usuário,
+21/08) — não existe mais `data_volta`/`voo_direto`, uma oferta de volta é
+outro registro, na rota oposta.
 """
+from sqlalchemy import select
+
 from domain.cadastros import Dominio, Programa
-from domain.emissoes import RotaEmissao
+from domain.emissoes import OfertaEmissao, RotaEmissao
 
 
 async def _seed_programa_e_rota(db, origem="GIG", destino="LIS", fonte="SITE_PRINCIPAL"):
@@ -27,11 +31,15 @@ async def test_registrar_oferta_numa_rota_cadastrada(client, db):
     resposta = await client.post("/api/v1/emissoes/ofertas", json={
         "programa_nome": "Azul", "origem": "GIG", "destino": "LIS",
         "data_ida": "2026-11-15", "classe": "ECONOMY", "pontos": 85000,
-        "companhia_operadora": "Azul", "voo_direto": True,
+        "companhia_operadora": "Azul", "paradas": 0, "assentos_restantes": 9,
     })
 
     assert resposta.status_code == 200
     assert "id" in resposta.json()
+
+    oferta = (await db.execute(select(OfertaEmissao))).scalar_one()
+    assert oferta.paradas == 0
+    assert oferta.assentos_restantes == 9
 
 
 async def test_rota_nao_cadastrada_e_rejeitada(client, db):

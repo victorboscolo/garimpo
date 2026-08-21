@@ -1,7 +1,9 @@
-"""Ingestão de ofertas do Garimpo Emissões: preço em milhas por rota, data e
-classe, sempre a mais barata encontrada numa coleta (decisão do usuário,
-19/08 — buscar traz várias opções de horário/conexão, o sinal que importa é
-"qual o menor preço hoje").
+"""Ingestão de ofertas do Garimpo Emissões: preço em milhas por rota (uma
+perna, só ida), data e classe, sempre a mais barata encontrada numa coleta
+(decisão do usuário, 19/08 — buscar traz várias opções de horário/conexão,
+o sinal que importa é "qual o menor preço hoje"; 21/08 — por perna, não por
+pacote ida+volta, pra ter mais alcance de público e dar liberdade pro
+usuário).
 
 Sem motor, sem dedup por hash: cada coleta é um retrato do preço agora, e o
 histórico completo — não só a observação mais recente — é o que sustenta o
@@ -35,15 +37,19 @@ async def resolver_rota(db, programa_nome: str, origem: str, destino: str):
 
 async def registrar_oferta(
     db, rota_id, data_ida: date, classe: str, pontos: int,
-    data_volta: date | None = None, taxa_reais: Decimal | None = None,
-    companhia_operadora: str | None = None, voo_direto: bool | None = None,
+    taxa_reais: Decimal | None = None, companhia_operadora: str | None = None,
+    paradas: int | None = None, assentos_restantes: int | None = None,
 ):
+    """Registra a oferta mais barata de uma perna (só ida — decisão do
+    usuário, 21/08). Não recebe data_volta: uma oferta de volta é outro
+    registro, na rota oposta.
+    """
     from domain.emissoes import OfertaEmissao
 
     oferta = OfertaEmissao(
-        rota_id=rota_id, data_ida=data_ida, data_volta=data_volta, classe=classe,
-        pontos=pontos, taxa_reais=taxa_reais, companhia_operadora=companhia_operadora,
-        voo_direto=voo_direto,
+        rota_id=rota_id, data_ida=data_ida, classe=classe, pontos=pontos,
+        taxa_reais=taxa_reais, companhia_operadora=companhia_operadora,
+        paradas=paradas, assentos_restantes=assentos_restantes,
     )
     db.add(oferta)
     await db.commit()

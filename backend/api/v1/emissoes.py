@@ -23,16 +23,17 @@ class OfertaEmissaoIn(BaseModel):
     data_ida: date
     classe: str
     pontos: int
-    data_volta: date | None = None
     taxa_reais: Decimal | None = None
     companhia_operadora: str | None = None
-    voo_direto: bool | None = None
+    paradas: int | None = None
+    assentos_restantes: int | None = None
 
 
 @router.post("/ofertas")
 async def registrar_oferta(payload: OfertaEmissaoIn, db: AsyncSession = Depends(get_db)):
-    """Chamado pelo coletor a cada rota+data+classe pesquisada — só a oferta
-    mais barata encontrada, não a lista inteira de voos.
+    """Chamado pelo coletor a cada rota+data+classe pesquisada (uma perna,
+    só ida) — só a oferta mais barata encontrada, não a lista inteira de
+    voos.
     """
     rota = await emissoes_service.resolver_rota(db, payload.programa_nome, payload.origem, payload.destino)
     if rota is None:
@@ -43,8 +44,8 @@ async def registrar_oferta(payload: OfertaEmissaoIn, db: AsyncSession = Depends(
 
     oferta = await emissoes_service.registrar_oferta(
         db, rota_id=rota.id, data_ida=payload.data_ida, classe=payload.classe, pontos=payload.pontos,
-        data_volta=payload.data_volta, taxa_reais=payload.taxa_reais,
-        companhia_operadora=payload.companhia_operadora, voo_direto=payload.voo_direto,
+        taxa_reais=payload.taxa_reais, companhia_operadora=payload.companhia_operadora,
+        paradas=payload.paradas, assentos_restantes=payload.assentos_restantes,
     )
     return {"id": str(oferta.id)}
 
