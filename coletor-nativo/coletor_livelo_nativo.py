@@ -298,7 +298,7 @@ async def enriquecer_com_detalhe(page, item: PromocaoBruta, tentativas: int = 2)
     texto = None
     for tentativa in range(1, tentativas + 1):
         try:
-            resposta = await page.goto(item.url_origem, wait_until="domcontentloaded", timeout=30000)
+            resposta = await page.goto(item.url_origem, wait_until="domcontentloaded", timeout=60000)
             if resposta and resposta.status == 200:
                 await page.wait_for_timeout(2500)
                 texto = await page.locator("body").inner_text()
@@ -381,7 +381,11 @@ async def coletar() -> list[PromocaoBruta]:
         )
 
         logger.info("Navegando até %s ...", URL_LIVELO_PARCEIROS)
-        response = await page.goto(URL_LIVELO_PARCEIROS, wait_until="domcontentloaded", timeout=30000)
+        # 60s, não 30s (achado 28/08): duas falhas seguidas por timeout bem no
+        # horário do wake agendado do Mac, sem causa única confirmada (não é
+        # bloqueio da Livelo — reproduzido ao vivo sem problema). Mitigação
+        # barata: absorver uma carga pontualmente lenta sem derrubar a coleta.
+        response = await page.goto(URL_LIVELO_PARCEIROS, wait_until="domcontentloaded", timeout=60000)
         logger.info("Status HTTP: %s", response.status if response else "sem resposta")
 
         if not response or response.status != 200:
