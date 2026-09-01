@@ -9,6 +9,8 @@ nem na Facilidade, que mede barreiras para o cliente aproveitar.
 from decimal import Decimal
 from types import SimpleNamespace
 
+import pytest
+
 from application.motor.pilares import pilar_amplitude
 
 
@@ -20,6 +22,10 @@ def _promocao(**ajustes):
     )
     padrao.update(ajustes)
     return SimpleNamespace(**padrao)
+
+
+def _condicionada(pontuacao, piso):
+    return _promocao(valor_condicionado=True, pontuacao=pontuacao, valor_condicionado_piso=piso)
 
 
 def test_oferta_condicionada_perde_alcance():
@@ -84,3 +90,43 @@ def test_segmento_varejo_nao_abranda_proibido():
         _promocao(marketplace_status="PROIBIDO"), 0, segmento_varejo=True
     )
     assert fora_do_varejo == no_varejo
+
+
+# --- Penalidade de condição escala pelo tamanho do degrau -----------------
+#
+# Decisão do usuário (01/09), a partir de um caso real (Magalu/Esfera, 7
+# pontos caindo pra 6 pra quem não é Clube — só 14% de queda) comparado ao
+# exemplo original da Renner (10 caindo pra 2 — 80% de queda): as duas
+# recebiam a mesma penalidade fixa de -25, mas a restrição real é bem
+# diferente. "Tem que penalizar muito mais" a queda grande que a pequena.
+
+
+def test_queda_grande_penaliza_quase_o_maximo():
+    """Renner: 10 -> 2, 80% de queda. Perto do teto de -25."""
+    nota = pilar_amplitude(_condicionada(Decimal("10"), Decimal("2")), 0)
+    # base 50, penalidade = -25 * 0.8 = -20, +15 de quantidade_categorias=0
+    assert nota == 45.0
+
+
+def test_queda_pequena_penaliza_pouco():
+    """Magalu/Esfera: 7 -> 6, ~14% de queda. Penalidade bem menor."""
+    nota = pilar_amplitude(_condicionada(Decimal("7"), Decimal("6")), 0)
+    # base 50, penalidade = -25 * (1/7) ≈ -3.57, +15 de quantidade_categorias=0
+    assert nota == pytest.approx(61.43, abs=0.01)
+
+
+def test_queda_maior_penaliza_mais_que_queda_menor():
+    """A ordem importa, não só os valores absolutos calculados acima."""
+    queda_grande = pilar_amplitude(_condicionada(Decimal("10"), Decimal("2")), 0)
+    queda_pequena = pilar_amplitude(_condicionada(Decimal("7"), Decimal("6")), 0)
+    assert queda_grande < queda_pequena
+
+
+def test_sem_piso_conhecido_mantem_penalidade_plena():
+    """"Até X" sem segunda pontuação no regulamento: a queda existe mas o
+    tamanho dela não é conhecido — não inventamos um piso, mantém a
+    penalidade cheia (o mesmo comportamento de antes desta mudança).
+    """
+    nota = pilar_amplitude(_condicionada(Decimal("8"), None), 0)
+    # base 50, penalidade plena de -25, +15 de quantidade_categorias=0
+    assert nota == 40.0

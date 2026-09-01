@@ -55,6 +55,7 @@ def _existente(**ajustes) -> SimpleNamespace:
         pontuacao=Decimal("6"),
         pontuacao_e_teto=False,
         valor_condicionado=False,
+        valor_condicionado_piso=None,
         marketplace_status=None,
     )
     padrao.update(ajustes)

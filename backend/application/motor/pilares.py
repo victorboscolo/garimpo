@@ -86,12 +86,26 @@ def pilar_amplitude(promocao: Promocao, quantidade_categorias: int, segmento_var
     nota = 50.0
 
     # O valor anunciado não vale para a compra inteira — a Renner anuncia 10
-    # pontos que só valem na categoria Básicos, e o resto do catálogo rende 2.
-    # É redução de alcance, e é aqui que deve doer: a Confiabilidade mede se o
-    # dado está completo e a Facilidade mede barreiras para aproveitar, que são
-    # outras coisas.
+    # pontos que só valem na categoria Básicos, e o resto do catálogo rende 2
+    # (80% de queda). É redução de alcance, e é aqui que deve doer: a
+    # Confiabilidade mede se o dado está completo e a Facilidade mede
+    # barreiras para aproveitar, que são outras coisas.
+    #
+    # A penalidade escala pela queda relativa (decisão do usuário, 01/09,
+    # caso real: Magalu/Esfera cai de 7 pra 6 pontos pra quem não é Clube —
+    # só 14% de queda, bem menos restritivo que os 80% da Renner, mas os
+    # dois recebiam a mesma penalidade fixa de -25). Sem piso conhecido no
+    # texto (caso do "Até X" sem segunda pontuação no regulamento — a queda
+    # existe mas o tamanho dela não é lido em lugar nenhum), mantém a
+    # penalidade plena: magnitude desconhecida é o pior caso, não o
+    # ausente.
     if getattr(promocao, "valor_condicionado", False):
-        nota -= 25
+        piso = getattr(promocao, "valor_condicionado_piso", None)
+        if piso is not None and promocao.pontuacao > 0:
+            queda_relativa = float((promocao.pontuacao - piso) / promocao.pontuacao)
+            nota -= 25 * min(max(queda_relativa, 0.0), 1.0)
+        else:
+            nota -= 25
 
     if promocao.marketplace_status == "PERMITIDO":
         nota += 20

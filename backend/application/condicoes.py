@@ -16,9 +16,12 @@ fator arbitrário: o critério é a escada que o regulamento declara.
 import re
 from decimal import Decimal, InvalidOperation
 
-# "10 pontos", "2 pontos", "1 ponto" — sempre acompanhados da palavra ponto(s),
-# o que evita ler datas ("14 a 16/08/2026") ou percentuais como pontuação.
-PADRAO_PONTOS_NO_TEXTO = re.compile(r"(\d+)\s*pontos?\b", re.IGNORECASE)
+# "10 pontos", "2 pontos", "1 ponto", "200.000 pontos" — sempre acompanhados
+# da palavra ponto(s), o que evita ler datas ("14 a 16/08/2026") ou
+# percentuais como pontuação. O grupo de milhar (\.\d{3})* existe porque sem
+# ele "200.000 pontos" (limite de acúmulo, não é taxa por real) casava só o
+# "000" final — um valor de pontuação fantasma, sempre o menor de todos.
+PADRAO_PONTOS_NO_TEXTO = re.compile(r"(\d{1,3}(?:\.\d{3})*)\s*pontos?\b", re.IGNORECASE)
 
 # A frase que o coletor antigo escrevia sobre si mesmo em `regulamento_texto`.
 # Não diz nada sobre a oferta e não pode ser lida como regulamento — registros
@@ -31,12 +34,22 @@ PADRAO_ESTOQUE_PROPRIO = re.compile(r"vendid[oa]s?\s+e\s+entregu", re.IGNORECASE
 
 PADRAO_MARKETPLACE = re.compile(r"marketplace", re.IGNORECASE)
 
+# "limite de acúmulo é de 200.000 pontos por CPF" — teto absoluto de
+# pontos, não uma taxa por real. Não é comparável ao degrau de
+# categoria/Clube (achado do usuário, 01/09: "não tem como comparar 200
+# mil com 10 por real") — removido do texto antes de procurar o piso,
+# pra não depender só de cair numa cláusula diferente.
+PADRAO_LIMITE_ACUMULO = re.compile(
+    r"(?:limite|teto|m[aá]ximo)\s+de\s+acúmulo[^.•*]*?\d[\d.]*\s*pontos?(?:\s*por\s*\w+)?",
+    re.IGNORECASE,
+)
+
 
 def _valores_citados(regulamento: str) -> list[Decimal]:
     valores = []
     for bruto in PADRAO_PONTOS_NO_TEXTO.findall(regulamento):
         try:
-            valores.append(Decimal(bruto))
+            valores.append(Decimal(bruto.replace(".", "")))
         except InvalidOperation:
             continue
     return valores
@@ -67,6 +80,56 @@ def valor_e_condicionado(
         return False
 
     return pontuacao > min(valores)
+
+
+def piso_do_valor_condicionado(pontuacao: Decimal, regulamento_texto: str | None) -> Decimal | None:
+    """O menor valor citado no regulamento — o piso da escada.
+
+    Mesma leitura que `valor_e_condicionado` já faz pra decidir o booleano;
+    aqui devolve o número em si, não só o sim/não. Usado pelo pilar
+    Amplitude pra escalar a penalidade pela queda relativa (decisão do
+    usuário, 01/09) — 10 pontos caindo pra 2 (Renner, 80%) não é a mesma
+    restrição que 7 caindo pra 6 (Magalu, 14%).
+
+    None quando não há regulamento, ou quando ele não cita nenhuma
+    pontuação menor que a exibida — inclui o caso "Até X" sem segunda
+    pontuação no texto, onde a queda existe (o card mesmo diz que é um
+    teto) mas o tamanho dela não é conhecido. Nesses casos não há piso pra
+    calcular a partir do texto, então não inventamos um.
+
+    Regulamentos com marcação por tópico ("*", comum na Esfera) descrevem
+    eixos de restrição diferentes em cláusulas separadas — categoria/Clube
+    numa, canal de venda (marketplace) noutra. Sem isolar a cláusula que
+    cita o valor exibido, o "1 ponto" do marketplace do Magalu virava o
+    piso no lugar do "6 pontos" do degrau sem Clube — dois eixos
+    diferentes (o do marketplace já é lido por `resolver_marketplace`)
+    confundidos como se fossem o mesmo degrau. Texto sem "*" (Livelo, nos
+    exemplos vistos até aqui) não tem esse problema — a queda inteira já
+    mora numa frase só — então é lido por completo.
+
+    Um teto absoluto de acúmulo ("limite de 200.000 pontos por CPF") é
+    removido antes de qualquer outra coisa — achado do usuário (01/09):
+    "não tem como comparar 200 mil com 10 por real", são grandezas
+    diferentes (teto total vs. taxa por real), não um degrau da mesma
+    escada. Isso vale mesmo dentro da cláusula certa, não só entre
+    cláusulas separadas.
+    """
+    if not regulamento_texto:
+        return None
+
+    texto = PADRAO_LIMITE_ACUMULO.sub(" ", regulamento_texto)
+    if "*" in texto:
+        clausulas = [c for c in texto.split("*") if c.strip()]
+        clausula = next((c for c in clausulas if pontuacao in _valores_citados(c)), None)
+        if clausula is not None:
+            texto = clausula
+
+    valores = _valores_citados(texto)
+    if not valores:
+        return None
+
+    piso = min(valores)
+    return piso if piso < pontuacao else None
 
 
 def resolver_marketplace(regulamento_texto: str | None) -> str | None:

@@ -108,18 +108,25 @@ def _montar_justificativa(criterios: dict, categoria: str, confianca_historica: 
 
 
 async def _parceiro_e_varejo(db: AsyncSession, parceiro_id) -> bool:
-    """O parceiro tem algum vínculo curado na categoria canônica "Varejo"?
+    """O parceiro está classificado na categoria canônica "Varejo"?
 
     Decisão do usuário (01/09): pra um parceiro de varejo com catálogo
     próprio amplo, a oferta não valer no marketplace (`pilar_amplitude`,
     `marketplace_status=PARCIAL`) não reduz o alcance na prática — a loja
-    própria já cobre a maior parte do que se compra ali. Usa a mesma fonte
-    de curadoria por vínculo que o histórico por segmento já usa
-    (`ParceiroCategoria` — curadoria do parceiro vence; na ausência dela,
-    cai pro padrão do slug em `categorias_origem`), não o `Parceiro.categoria_id`
-    direto, que não é preenchido por nenhum fluxo hoje.
+    própria já cobre a maior parte do que se compra ali.
+
+    Duas fontes, nessa ordem: primeiro a curadoria por vínculo
+    (`ParceiroCategoria` — mesma fonte que o histórico por segmento já usa;
+    curadoria do parceiro vence, na ausência dela cai pro padrão do slug em
+    `categorias_origem`); na ausência de qualquer vínculo, cai pro
+    `Parceiro.categoria_id` direto — usado quando a fonte de origem não tem
+    taxonomia própria pra curar (caso real: Esfera filtra o único
+    `parentCategories` que a Magalu carrega por ser só o contêiner
+    genérico "Lojas Parceiras", que "não classifica nada"
+    — `esfera_api._categorias`). Nesses casos a classificação é uma decisão
+    humana direta, não derivada de vínculo nenhum.
     """
-    from domain.cadastros import Categoria, CategoriaOrigem, ParceiroCategoria
+    from domain.cadastros import Categoria, CategoriaOrigem, Parceiro, ParceiroCategoria
 
     vinculos = (await db.execute(
         select(ParceiroCategoria).filter_by(parceiro_id=parceiro_id)
@@ -133,6 +140,12 @@ async def _parceiro_e_varejo(db: AsyncSession, parceiro_id) -> bool:
         if categoria_efetiva_id is None:
             continue
         categoria = await db.get(Categoria, categoria_efetiva_id)
+        if categoria is not None and categoria.nome == "Varejo":
+            return True
+
+    parceiro = await db.get(Parceiro, parceiro_id)
+    if parceiro is not None and parceiro.categoria_id is not None:
+        categoria = await db.get(Categoria, parceiro.categoria_id)
         if categoria is not None and categoria.nome == "Varejo":
             return True
 

@@ -18,6 +18,7 @@ from sqlalchemy.orm.attributes import set_committed_value
 
 from application.condicoes import (
     PADRAO_FRASE_DO_COLETOR,
+    piso_do_valor_condicionado,
     resolver_marketplace,
     valor_e_condicionado,
 )
@@ -127,6 +128,10 @@ def _completar_dados_da_campanha(existente: Promocao, bruta: PromocaoBrutaIn) ->
     )
     if existente.valor_condicionado != condicionado:
         existente.valor_condicionado = condicionado
+        mudou = True
+    piso = piso_do_valor_condicionado(existente.pontuacao, existente.regulamento_texto)
+    if existente.valor_condicionado_piso != piso:
+        existente.valor_condicionado_piso = piso
         mudou = True
 
     marketplace = resolver_marketplace(existente.regulamento_texto)
@@ -305,6 +310,7 @@ async def ingerir_promocao_bruta(
         valor_condicionado=valor_e_condicionado(
             bruta.pontuacao, bruta.regulamento_texto, bruta.pontuacao_e_teto
         ),
+        valor_condicionado_piso=piso_do_valor_condicionado(bruta.pontuacao, bruta.regulamento_texto),
         marketplace_status=resolver_marketplace(bruta.regulamento_texto),
         data_inicio=bruta.data_inicio,
         data_fim=bruta.data_fim,

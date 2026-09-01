@@ -62,6 +62,12 @@ class Promocao(Base):
     # o regulamento cita uma pontuação menor, revelando que o valor mostrado é
     # o degrau de cima de uma escada. Ver application/condicoes.py.
     valor_condicionado: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # O menor valor citado no regulamento — o piso da escada. Nulo quando não
+    # há piso extraível (caso do "Até X" sem segunda pontuação no texto). O
+    # pilar Amplitude usa a queda relativa (pontuacao -> piso) pra escalar a
+    # penalidade: 10->2 (Renner, 80% de queda) não é o mesmo tanto de 7->6
+    # (Magalu, 14%) — decisão do usuário, 01/09.
+    valor_condicionado_piso: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
 
     requer_clube: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     qual_clube: Mapped[str | None] = mapped_column(String(100))
