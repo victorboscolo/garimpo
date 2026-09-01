@@ -107,6 +107,38 @@ def _montar_justificativa(criterios: dict, categoria: str, confianca_historica: 
     return " ".join(partes)
 
 
+async def _parceiro_e_varejo(db: AsyncSession, parceiro_id) -> bool:
+    """O parceiro tem algum vínculo curado na categoria canônica "Varejo"?
+
+    Decisão do usuário (01/09): pra um parceiro de varejo com catálogo
+    próprio amplo, a oferta não valer no marketplace (`pilar_amplitude`,
+    `marketplace_status=PARCIAL`) não reduz o alcance na prática — a loja
+    própria já cobre a maior parte do que se compra ali. Usa a mesma fonte
+    de curadoria por vínculo que o histórico por segmento já usa
+    (`ParceiroCategoria` — curadoria do parceiro vence; na ausência dela,
+    cai pro padrão do slug em `categorias_origem`), não o `Parceiro.categoria_id`
+    direto, que não é preenchido por nenhum fluxo hoje.
+    """
+    from domain.cadastros import Categoria, CategoriaOrigem, ParceiroCategoria
+
+    vinculos = (await db.execute(
+        select(ParceiroCategoria).filter_by(parceiro_id=parceiro_id)
+    )).scalars().all()
+
+    for vinculo in vinculos:
+        categoria_efetiva_id = vinculo.categoria_id
+        if categoria_efetiva_id is None:
+            origem = await db.get(CategoriaOrigem, vinculo.categoria_origem_id)
+            categoria_efetiva_id = origem.categoria_id if origem else None
+        if categoria_efetiva_id is None:
+            continue
+        categoria = await db.get(Categoria, categoria_efetiva_id)
+        if categoria is not None and categoria.nome == "Varejo":
+            return True
+
+    return False
+
+
 async def classificar_promocao(db: AsyncSession, promocao: Promocao) -> Classificacao:
     """Executa o Motor V1 sobre uma promoção e persiste o resultado.
 
@@ -137,10 +169,12 @@ async def classificar_promocao(db: AsyncSession, promocao: Promocao) -> Classifi
     resultado_categorias = await db.execute(stmt_categorias)
     qtd_categorias = len(resultado_categorias.scalars().all())
 
+    segmento_varejo = await _parceiro_e_varejo(db, promocao.parceiro_id)
+
     criterios = {
         "historico": pilares.pilar_historico_com_base(promocao, base),
         "atratividade": pilares.pilar_atratividade(promocao, mercado),
-        "amplitude": pilares.pilar_amplitude(promocao, qtd_categorias),
+        "amplitude": pilares.pilar_amplitude(promocao, qtd_categorias, segmento_varejo),
         "facilidade": pilares.pilar_facilidade(promocao),
         "exclusividade": pilares.pilar_exclusividade(promocao, historico),
         "confiabilidade_dados": pilares.pilar_confiabilidade_dados(promocao),

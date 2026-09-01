@@ -53,3 +53,34 @@ def test_nota_permanece_na_escala():
         _promocao(valor_condicionado=True, marketplace_status="PROIBIDO"), 5
     )
     assert 0 <= pior <= 100
+
+
+def test_marketplace_parcial_penaliza_menos_no_varejo():
+    """Decisão do usuário (01/09), a partir de um caso real (Magalu/Esfera, 7
+    pontos, reduzido pra 1 só em loja parceira): restrição de canal de venda
+    pesa bem menos que restrição de tipo de produto pra um parceiro de
+    varejo com catálogo próprio já amplo — a loja própria cobre a maior
+    parte do que se compra ali, então não valer no marketplace quase não
+    reduz o alcance de verdade.
+    """
+    fora_do_varejo = pilar_amplitude(
+        _promocao(marketplace_status="PARCIAL"), 0, segmento_varejo=False
+    )
+    no_varejo = pilar_amplitude(
+        _promocao(marketplace_status="PARCIAL"), 0, segmento_varejo=True
+    )
+    assert no_varejo > fora_do_varejo
+
+
+def test_segmento_varejo_nao_abranda_proibido():
+    """PROIBIDO é bloqueio de verdade (nada rende no marketplace), não uma
+    redução de taxa como o PARCIAL — continua penalizado igual em qualquer
+    segmento.
+    """
+    fora_do_varejo = pilar_amplitude(
+        _promocao(marketplace_status="PROIBIDO"), 0, segmento_varejo=False
+    )
+    no_varejo = pilar_amplitude(
+        _promocao(marketplace_status="PROIBIDO"), 0, segmento_varejo=True
+    )
+    assert fora_do_varejo == no_varejo

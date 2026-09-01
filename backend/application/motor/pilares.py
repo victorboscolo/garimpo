@@ -65,13 +65,23 @@ def pilar_atratividade(promocao: Promocao, mercado: list | None) -> float:
     return percentil(promocao.pontuacao, mercado)
 
 
-def pilar_amplitude(promocao: Promocao, quantidade_categorias: int) -> float:
+def pilar_amplitude(promocao: Promocao, quantidade_categorias: int, segmento_varejo: bool = False) -> float:
     """Mede o alcance da promoção no catálogo.
 
     Heurística inicial: marketplace_status e quantidade de categorias
     associadas. Texto livre em `abrangencia` não é parseado automaticamente
     nesta versão — fica registrado como contexto para o admin, mas não
     influencia a nota até termos um padrão estruturado de captura.
+
+    `segmento_varejo` suaviza a penalidade de `marketplace_status=PARCIAL`
+    (decisão do usuário, 01/09, caso real: Magalu/Esfera a 7 pontos, só
+    reduzido pra 1 ponto em produto vendido por loja parceira). Restrição de
+    **canal** de venda pesa bem menos que restrição de **tipo de produto**
+    pra um parceiro de varejo com catálogo próprio já muito amplo — não
+    vale no marketplace não reduz o alcance na prática, porque a loja
+    própria já cobre a maior parte do que se compra ali. PROIBIDO continua
+    penalizado igual em qualquer segmento: é bloqueio de verdade, não
+    redução de taxa.
     """
     nota = 50.0
 
@@ -88,7 +98,7 @@ def pilar_amplitude(promocao: Promocao, quantidade_categorias: int) -> float:
     elif promocao.marketplace_status == "PROIBIDO":
         nota -= 20
     elif promocao.marketplace_status == "PARCIAL":
-        nota -= 5
+        nota -= 1 if segmento_varejo else 5
 
     if quantidade_categorias == 0:
         nota += 15  # nenhuma categoria = presumidamente todo o catálogo
