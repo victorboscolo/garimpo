@@ -159,6 +159,33 @@ async def _valores_da_categoria(db: AsyncSession, categoria_id, programa_id):
 # parceiro. Abaixo deste mínimo, o segmento é a comparação mais honesta.
 MINIMO_PARA_USAR_FAMILIA = 2
 
+# Quantidade não basta: achado do usuário, 02/09, caso real do Magalu (2
+# ofertas aprovadas, mas 1 e 7 pontos — média 4, um "meio do caminho" que
+# não representa nada). Comparar 5 pontos contra [1, 7] rendeu 50º
+# percentil por coincidência aritmética, não por sinal real. O coeficiente
+# de variação (desvio padrão / média) mede dispersão independente da
+# escala — [1, 7] tem CV ≈ 75%, [5, 6] tem CV ≈ 9%. Acima do corte, a
+# amostra é dispersa demais pra sustentar um padrão, e a cascata desce pro
+# segmento/mercado — mesmo caminho que já existe para amostra insuficiente.
+CV_MAXIMO_PARA_USAR_FAMILIA = 0.5
+
+
+def _coeficiente_variacao(valores: list[Decimal]) -> float:
+    """Desvio padrão populacional dividido pela média.
+
+    Mede dispersão relativa, não absoluta — um parceiro que oscila entre 2 e
+    4 pontos e um que oscila entre 20 e 40 têm a mesma variação relativa
+    (50%), mesmo em escalas bem diferentes.
+    """
+    if not valores:
+        return 0.0
+    n = len(valores)
+    media = sum(float(v) for v in valores) / n
+    if media == 0:
+        return 0.0
+    variancia = sum((float(v) - media) ** 2 for v in valores) / n
+    return variancia ** 0.5 / media
+
 
 async def obter_base_comparacao(
     db: AsyncSession,
@@ -167,6 +194,7 @@ async def obter_base_comparacao(
     excluir_promocao_id: uuid.UUID | None = None,
     minimo_segmento: int = 5,
     minimo_familia: int | None = None,
+    cv_maximo_familia: float | None = None,
 ) -> BaseComparacao:
     """Resolve contra o que comparar a oferta, em cascata.
 
@@ -180,23 +208,36 @@ async def obter_base_comparacao(
     A comparação por segmento é mais grosseira que a por histórico próprio:
     "servicos" reúne 29 parceiros que fazem coisas bem diferentes. Por isso ela
     fica no nível 2 e a confiança cai para MEDIA quando é usada.
+
+    Quantidade suficiente não basta: a amostra também precisa ser coerente
+    (ver `CV_MAXIMO_PARA_USAR_FAMILIA`) — duas ofertas muito diferentes
+    entre si (ex: 1 e 7 pontos) não formam um padrão, mesmo já passando do
+    mínimo de quantidade. Falha nesse critério desce a cascata pro
+    segmento/mercado, igual já acontece com amostra insuficiente.
     """
     limiar = await resolver_configuracao(db, "historico_suficiente", programa_id=programa_id)
     if minimo_familia is None:
         minimo_familia = (limiar or {}).get("min_para_base", MINIMO_PARA_USAR_FAMILIA)
+    if cv_maximo_familia is None:
+        cv_maximo_familia = (limiar or {}).get("cv_maximo_familia", CV_MAXIMO_PARA_USAR_FAMILIA)
 
     familia = await obter_historico_familia(
         db, parceiro_id=parceiro_id, programa_id=programa_id,
         excluir_promocao_id=excluir_promocao_id,
     )
-    if familia.media_ponderada is not None and familia.total_campanhas_janela >= minimo_familia:
+    valores_familia = [pontuacao for pontuacao, _ in familia.amostras]
+    if (
+        familia.media_ponderada is not None
+        and familia.total_campanhas_janela >= minimo_familia
+        and _coeficiente_variacao(valores_familia) <= cv_maximo_familia
+    ):
         return BaseComparacao(
             media_ponderada=familia.media_ponderada,
             total=familia.total_campanhas_janela,
             nivel="FAMILIA",
             rotulo=None,
             confianca_historica=familia.confianca_historica,
-            distribuicao=[pontuacao for pontuacao, _ in familia.amostras],
+            distribuicao=valores_familia,
         )
 
     # Vínculos do parceiro (não só o slug — precisa da curadoria por parceiro
