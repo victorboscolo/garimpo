@@ -96,15 +96,23 @@ def pilar_amplitude(promocao: Promocao, quantidade_categorias: int, segmento_var
     # só 14% de queda, bem menos restritivo que os 80% da Renner, mas os
     # dois recebiam a mesma penalidade fixa de -25). Sem piso conhecido no
     # texto (caso do "Até X" sem segunda pontuação no regulamento — a queda
-    # existe mas o tamanho dela não é lido em lugar nenhum), mantém a
-    # penalidade plena: magnitude desconhecida é o pior caso, não o
-    # ausente.
+    # existe mas o tamanho dela não é lido em lugar nenhum), a penalidade
+    # plena só se aplica quando a razão do "até" continua desconhecida.
+    #
+    # Achado do usuário (08/09), caso real: Camicado/Esfera a 10 pontos,
+    # marcada "até" pela Esfera mas sem nenhum degrau de Clube/categoria no
+    # regulamento — a única restrição no texto inteiro é a de marketplace
+    # (`marketplace_status=PROIBIDO`), já penalizada abaixo. Sem esse
+    # ajuste, a mesma restrição contava duas vezes: uma como marketplace,
+    # outra como "condição desconhecida". Quando o marketplace já é
+    # PARCIAL/PROIBIDO e não há piso, a magnitude não é desconhecida — já
+    # está explicada ali, então a penalidade extra não se aplica.
     if getattr(promocao, "valor_condicionado", False):
         piso = getattr(promocao, "valor_condicionado_piso", None)
         if piso is not None and promocao.pontuacao > 0:
             queda_relativa = float((promocao.pontuacao - piso) / promocao.pontuacao)
             nota -= 25 * min(max(queda_relativa, 0.0), 1.0)
-        else:
+        elif promocao.marketplace_status not in ("PARCIAL", "PROIBIDO"):
             nota -= 25
 
     if promocao.marketplace_status == "PERMITIDO":

@@ -130,3 +130,47 @@ def test_sem_piso_conhecido_mantem_penalidade_plena():
     nota = pilar_amplitude(_condicionada(Decimal("8"), None), 0)
     # base 50, penalidade plena de -25, +15 de quantidade_categorias=0
     assert nota == 40.0
+
+
+# --- Marketplace já explica o "até", sem piso, não conta duas vezes -------
+#
+# Achado do usuário (08/09), caso real: Camicado/Esfera a 10 pontos, marcada
+# "até" pela Esfera mas sem nenhum degrau de Clube/categoria no regulamento
+# — a única restrição no texto inteiro é a de marketplace (PROIBIDO), já
+# penalizada à parte. Sem esse ajuste, a mesma restrição contava duas vezes.
+
+
+def test_proibido_sem_piso_nao_soma_penalidade_extra():
+    promocao = _promocao(
+        valor_condicionado=True, valor_condicionado_piso=None,
+        marketplace_status="PROIBIDO", pontuacao=Decimal("10"),
+    )
+    nota = pilar_amplitude(promocao, 0)
+    # base 50, sem penalidade extra de condição (marketplace já explica),
+    # -20 de PROIBIDO, +15 de quantidade_categorias=0
+    assert nota == 45.0
+
+
+def test_parcial_sem_piso_nao_soma_penalidade_extra():
+    promocao = _promocao(
+        valor_condicionado=True, valor_condicionado_piso=None,
+        marketplace_status="PARCIAL", pontuacao=Decimal("5"),
+    )
+    nota = pilar_amplitude(promocao, 0)
+    # base 50, sem penalidade extra de condição, -5 de PARCIAL (fora do
+    # varejo), +15 de quantidade_categorias=0
+    assert nota == 60.0
+
+
+def test_sem_marketplace_conhecido_mantem_penalidade_plena_mesmo_assim():
+    """Se não há marketplace_status nenhum (nem PARCIAL nem PROIBIDO), o
+    "até" continua sem explicação — a penalidade plena de "magnitude
+    desconhecida" se aplica, igual antes desta mudança.
+    """
+    promocao = _promocao(
+        valor_condicionado=True, valor_condicionado_piso=None,
+        marketplace_status=None, pontuacao=Decimal("10"),
+    )
+    nota = pilar_amplitude(promocao, 0)
+    # base 50, -25 de condição plena, +15 de quantidade_categorias=0
+    assert nota == 40.0
