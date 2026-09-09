@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.configuracoes_service import resolver_configuracao
+from application.motor.percentil import valor_comparavel
 from application.motor.segmento import escolher_segmento
 from domain.cadastros import Categoria, CategoriaOrigem, ParceiroCategoria
 from domain.promocoes import Promocao
@@ -80,7 +81,12 @@ async def obter_historico_familia(
             peso = peso_temporal["medio_peso"]
         else:
             peso = peso_temporal["antigo_peso"]
-        amostras.append((campanha.pontuacao, peso))
+        # valor_comparavel, não campanha.pontuacao (achado do usuário,
+        # 09/09): o histórico do parceiro é a régua de comparação, e uma
+        # oferta condicionada ("7 pontos só na marca própria, 1 no resto")
+        # não deve entrar com o número anunciado nessa régua — entra com o
+        # que qualquer comprador realmente recebia garantido.
+        amostras.append((valor_comparavel(campanha), peso))
 
     soma_ponderada = sum(float(pontuacao) * peso for pontuacao, peso in amostras)
     soma_pesos = sum(peso for _, peso in amostras)
@@ -119,12 +125,17 @@ class BaseComparacao:
 
 
 async def _valores_do_segmento(db: AsyncSession, categoria_origem_id, programa_id):
-    """Pontuações aprovadas de um segmento bruto (nível de slug de origem).
+    """Valores comparáveis das ofertas aprovadas de um segmento bruto
+    (nível de slug de origem).
 
     Usado quando não há curadoria por parceiro — o fallback de sempre.
+    Seleciona a promoção inteira, não só `pontuacao`, porque
+    `valor_comparavel` precisa também de `valor_condicionado`/
+    `valor_condicionado_piso` (achado do usuário, 09/09) — uma oferta
+    condicionada não entra na régua de comparação com o número anunciado.
     """
     stmt = (
-        select(Promocao.pontuacao)
+        select(Promocao)
         .join(ParceiroCategoria, ParceiroCategoria.parceiro_id == Promocao.parceiro_id)
         .filter(
             ParceiroCategoria.categoria_origem_id == categoria_origem_id,
@@ -132,16 +143,19 @@ async def _valores_do_segmento(db: AsyncSession, categoria_origem_id, programa_i
             Promocao.status.in_(["APROVADA", "PUBLICADA"]),
         )
     )
-    return list((await db.execute(stmt)).scalars().all())
+    promocoes = (await db.execute(stmt)).scalars().all()
+    return [valor_comparavel(p) for p in promocoes]
 
 
 async def _valores_da_categoria(db: AsyncSession, categoria_id, programa_id):
-    """Pontuações aprovadas de todo parceiro cuja categoria canônica efetiva
-    (curadoria por parceiro, com fallback pro padrão do slug de origem) é
-    esta — dentro do mesmo programa, nunca misturando Livelo com Esfera.
+    """Valores comparáveis das ofertas aprovadas de todo parceiro cuja
+    categoria canônica efetiva (curadoria por parceiro, com fallback pro
+    padrão do slug de origem) é esta — dentro do mesmo programa, nunca
+    misturando Livelo com Esfera. Mesmo motivo de `_valores_do_segmento`
+    pra selecionar a promoção inteira, não só `pontuacao`.
     """
     stmt = (
-        select(Promocao.pontuacao)
+        select(Promocao)
         .join(ParceiroCategoria, ParceiroCategoria.parceiro_id == Promocao.parceiro_id)
         .join(CategoriaOrigem, CategoriaOrigem.id == ParceiroCategoria.categoria_origem_id)
         .filter(
@@ -150,7 +164,8 @@ async def _valores_da_categoria(db: AsyncSession, categoria_id, programa_id):
             Promocao.status.in_(["APROVADA", "PUBLICADA"]),
         )
     )
-    return list((await db.execute(stmt)).scalars().all())
+    promocoes = (await db.execute(stmt)).scalars().all()
+    return [valor_comparavel(p) for p in promocoes]
 
 
 # Uma única oferta anterior não é histórico: é uma coincidência. Comparar com
@@ -280,15 +295,16 @@ async def obter_base_comparacao(
             rotulo=escolhido, confianca_historica="MEDIA", distribuicao=valores,
         )
 
-    stmt_mercado = select(Promocao.pontuacao).filter(
+    stmt_mercado = select(Promocao).filter(
         Promocao.programa_id == programa_id,
         Promocao.status.in_(["APROVADA", "PUBLICADA"]),
     )
-    valores = (await db.execute(stmt_mercado)).scalars().all()
+    promocoes_mercado = (await db.execute(stmt_mercado)).scalars().all()
+    valores = [valor_comparavel(p) for p in promocoes_mercado]
     if not valores:
         return BaseComparacao(None, 0, "NENHUMA", None, "BAIXA")
     return BaseComparacao(
         media_ponderada=Decimal(str(sum(valores) / len(valores))),
         total=len(valores), nivel="MERCADO", rotulo=None, confianca_historica="BAIXA",
-        distribuicao=list(valores),
+        distribuicao=valores,
     )

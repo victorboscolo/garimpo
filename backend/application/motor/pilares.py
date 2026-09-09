@@ -8,7 +8,7 @@ só na camada de Interpretação/justificativa, fora daqui).
 from decimal import Decimal
 
 from application.motor.historico import HistoricoFamilia
-from application.motor.percentil import percentil
+from application.motor.percentil import percentil, valor_comparavel
 from domain.promocoes import Promocao
 
 
@@ -42,10 +42,15 @@ def pilar_historico_com_base(promocao: Promocao, base) -> float:
     A nota é o percentil, não a razão com a média. A razão saturava: com média
     de segmento em 2 pontos, qualquer oferta acima de 4 valia 100, e 38
     classificações estavam nesse teto.
+
+    Usa `valor_comparavel`, não `promocao.pontuacao` direto (achado do
+    usuário, 09/09) — `base.distribuicao` já vem construída com o piso das
+    ofertas condicionadas (ver `historico.py`), então esta oferta precisa
+    ser posicionada na mesma régua, não com o número anunciado.
     """
     if not base.distribuicao:
         return 50.0
-    return percentil(promocao.pontuacao, base.distribuicao)
+    return percentil(valor_comparavel(promocao), base.distribuicao)
 
 
 def pilar_atratividade(promocao: Promocao, mercado: list | None) -> float:
@@ -59,10 +64,13 @@ def pilar_atratividade(promocao: Promocao, mercado: list | None) -> float:
     e comparar contra a média numa distribuição assim era severo no meio —
     uma oferta de 5 pontos supera 75% do mercado e tirava 46 — e cego no topo,
     onde 33 classificações empatavam em 100.
+
+    Usa `valor_comparavel`, mesma razão do pilar Histórico: `mercado` já
+    vem construído com o piso das ofertas condicionadas.
     """
     if not mercado:
         return 50.0
-    return percentil(promocao.pontuacao, mercado)
+    return percentil(valor_comparavel(promocao), mercado)
 
 
 def pilar_amplitude(promocao: Promocao, quantidade_categorias: int, segmento_varejo: bool = False) -> float:
@@ -158,12 +166,17 @@ def pilar_exclusividade(promocao: Promocao, historico: HistoricoFamilia) -> floa
     if historico.maior_valor_historico is None:
         return 50.0
 
-    if promocao.pontuacao > historico.maior_valor_historico:
+    # valor_comparavel: `maior_valor_historico` já vem do piso das ofertas
+    # condicionadas (ver `historico.py`), então o "recorde" a bater é o
+    # valor real garantido, não o anunciado (achado do usuário, 09/09).
+    valor = valor_comparavel(promocao)
+
+    if valor > historico.maior_valor_historico:
         return 100.0  # novo recorde
-    if promocao.pontuacao == historico.maior_valor_historico:
+    if valor == historico.maior_valor_historico:
         return 85.0  # empatou o recorde
 
-    razao = float(promocao.pontuacao) / float(historico.maior_valor_historico)
+    razao = float(valor) / float(historico.maior_valor_historico)
     return _clamp(razao * 70.0)
 
 

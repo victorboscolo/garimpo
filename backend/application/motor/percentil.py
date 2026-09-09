@@ -32,3 +32,33 @@ def percentil(valor: Decimal, distribuicao: list[Decimal]) -> float:
     iguais = sum(1 for v in distribuicao if v == valor)
 
     return round((menores + iguais / 2) / total * 100, 2)
+
+
+def valor_comparavel(promocao) -> Decimal:
+    """O valor real, sem pegadinha, pra comparar esta oferta com outras.
+
+    Achado do usuário (09/09), caso real: o Carrefour anunciou "7 pontos"
+    (20/08), mas só valia em produtos da marca própria — 1 ponto pra tudo
+    mais. Comparar um 5 pontos incondicional (09/09) contra esse "7" não é
+    justo: o 7 nunca foi o valor real pra maior parte das compras, é o
+    mesmo problema de fundo que já corrigimos no pilar Amplitude (a
+    penalidade de `valor_condicionado` escalando pela queda relativa), só
+    que aqui do lado da **comparação**, não da nota da própria oferta.
+
+    Quando a oferta é condicionada e o piso é conhecido, o piso — o que
+    qualquer comprador realmente recebe, garantido — é o valor que entra
+    em qualquer distribuição de comparação (histórico, segmento, mercado)
+    e também o valor usado pra posicionar esta mesma oferta dentro delas.
+    Sem piso conhecido (caso do "Até X" sem segunda pontuação no texto),
+    não há valor melhor pra usar — mantém o anunciado, mesmo sabendo que
+    pode estar inflado.
+
+    Fica em `percentil.py`, não em `pilares.py`, porque `historico.py`
+    também precisa dele e já é importado por `pilares.py` — colocar aqui
+    evita import circular.
+    """
+    if getattr(promocao, "valor_condicionado", False):
+        piso = getattr(promocao, "valor_condicionado_piso", None)
+        if piso is not None:
+            return piso
+    return promocao.pontuacao

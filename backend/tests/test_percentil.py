@@ -11,8 +11,9 @@ mercado a oferta supera. É autocalibrante: se todas as ofertas dobrarem, ningu�
 muda de posição — e portanto ninguém muda de categoria.
 """
 from decimal import Decimal
+from types import SimpleNamespace
 
-from application.motor.percentil import percentil
+from application.motor.percentil import percentil, valor_comparavel
 
 
 def _d(*valores):
@@ -62,3 +63,41 @@ def test_escala_nao_muda_o_resultado():
     original = percentil(Decimal("5"), _d(1, 2, 3, 5, 10))
     dobrado = percentil(Decimal("10"), _d(2, 4, 6, 10, 20))
     assert abs(original - dobrado) < 0.01
+
+
+# --- valor_comparavel: o número real, sem pegadinha, pra comparação -----
+#
+# Achado do usuário (09/09), caso real: o Carrefour anunciou "7 pontos"
+# (20/08), mas só valia em produtos da marca própria — 1 ponto pra tudo
+# mais. Comparar um 5 pontos incondicional contra esse "7" não é justo: o
+# 7 nunca foi o valor real pra maior parte das compras.
+
+
+def _promocao(**ajustes):
+    padrao = dict(pontuacao=Decimal("10"), valor_condicionado=False, valor_condicionado_piso=None)
+    padrao.update(ajustes)
+    return SimpleNamespace(**padrao)
+
+
+def test_oferta_sem_condicao_usa_o_valor_anunciado():
+    promocao = _promocao(pontuacao=Decimal("5"), valor_condicionado=False)
+    assert valor_comparavel(promocao) == Decimal("5")
+
+
+def test_oferta_condicionada_com_piso_usa_o_piso():
+    """Carrefour: anunciou 7, mas só 1 vale fora da marca própria."""
+    promocao = _promocao(
+        pontuacao=Decimal("7"), valor_condicionado=True, valor_condicionado_piso=Decimal("1"),
+    )
+    assert valor_comparavel(promocao) == Decimal("1")
+
+
+def test_oferta_condicionada_sem_piso_conhecido_usa_o_anunciado():
+    """"Até X" sem segunda pontuação no regulamento: não há valor melhor
+    pra usar, então mantém o anunciado — mesmo sabendo que pode estar
+    inflado.
+    """
+    promocao = _promocao(
+        pontuacao=Decimal("8"), valor_condicionado=True, valor_condicionado_piso=None,
+    )
+    assert valor_comparavel(promocao) == Decimal("8")

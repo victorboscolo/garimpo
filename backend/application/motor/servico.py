@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from application.configuracoes_service import resolver_configuracao
 from application.motor import pilares
 from application.motor.historico import obter_base_comparacao, obter_historico_familia
+from application.motor.percentil import valor_comparavel
 from domain.motor import ENTIDADE_PROMOCAO, Classificacao
 from domain.promocoes import CategoriaPromocao, Promocao
 
@@ -37,16 +38,23 @@ FAIXAS_DEFAULT = {
 
 
 async def _mercado(db: AsyncSession, programa_id) -> list:
-    """Pontuações aprovadas/publicadas do programa — o 'mercado competitivo'
-    contra o qual o pilar Atratividade posiciona a oferta.
+    """Valores comparáveis das ofertas aprovadas/publicadas do programa —
+    o 'mercado competitivo' contra o qual o pilar Atratividade posiciona
+    a oferta.
 
     Devolve a distribuição inteira, e não a média: a nota é a posição da oferta
     dentro dela. Ver motor/percentil.py.
+
+    Usa `valor_comparavel`, não `Promocao.pontuacao` direto (achado do
+    usuário, 09/09) — uma oferta condicionada não pode inflar o mercado
+    com o número anunciado, quando o que qualquer comprador realmente
+    recebe é o piso.
     """
-    stmt = select(Promocao.pontuacao).filter_by(programa_id=programa_id).filter(
+    stmt = select(Promocao).filter_by(programa_id=programa_id).filter(
         Promocao.status.in_(["APROVADA", "PUBLICADA"])
     )
-    return list((await db.execute(stmt)).scalars().all())
+    promocoes = (await db.execute(stmt)).scalars().all()
+    return [valor_comparavel(p) for p in promocoes]
 
 
 def _resolver_categoria(nota: float, faixas: dict) -> str:
