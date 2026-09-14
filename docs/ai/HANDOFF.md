@@ -1298,3 +1298,138 @@ Registradas para que ninguém as reutilize:
 - *"Coletor da Esfera — programa cadastrado no banco, sem coletor"* — verdade
   até 17/08/2026. A Esfera tinha vantagem que ninguém havia checado: API
   pública sem anti-robô algum, mais simples de coletar que a própria Livelo.
+
+## 13. Sessão de 09/09 — calibragem do motor e reinvestigação de Emissões
+
+> Este handoff ficou sem atualização entre 21/08 e 09/09 — os números da
+> seção 3 (dados no banco, 18/08) e da seção 9 (roteiro, 21/08) estão
+> desatualizados e não foram reconferidos nesta sessão. Não reutilizar sem
+> checar contra o banco real primeiro.
+
+### Seis correções reais no Motor de Análise, todas verificadas contra dado real
+
+Casos concretos levantados pelo usuário (Magalu, Camicado, Carrefour)
+motivaram seis mudanças no motor, todas com teste automatizado e conferidas
+via recalibração + consulta direta ao banco:
+
+1. **`segmento_varejo` amacia a penalidade de `marketplace_status=PARCIAL`**
+   (`motor/pilares.py::pilar_amplitude`) — para um parceiro de varejo com
+   catálogo próprio amplo, não valer no marketplace não reduz o alcance na
+   prática. Só vale para PARCIAL; PROIBIDO continua penalidade cheia
+   independente do segmento. `servico.py::_parceiro_e_varejo` resolve o
+   segmento por `ParceiroCategoria` (curadoria por vínculo, mesma fonte da
+   cascata de histórico) com fallback pra `Parceiro.categoria_id`.
+2. **Penalidade de condição escala pelo tamanho do degrau** — antes a queda de
+   nota era fixa independente de o piso condicionado ser próximo ou muito
+   abaixo do valor anunciado; agora escala com `queda_relativa` (piso vs.
+   anunciado).
+3. **Amplitude não duplica penalidade quando marketplace já explica o "até"**
+   — quando `marketplace_status` já é a razão do degrau condicionado (o "até"
+   é justamente "vale menos fora do parceiro direto"), a mesma restrição não
+   pode penalizar duas vezes.
+4. **Histórico por família exige coerência, não só quantidade**
+   (`motor/historico.py`) — `MINIMO_PARA_USAR_FAMILIA=2` sozinho não bastava:
+   duas campanhas muito díspares (ex: 3 pontos e 40 pontos) não formam
+   histórico coerente. Novo gate: `_coeficiente_variacao(valores) <=
+   CV_MAXIMO_PARA_USAR_FAMILIA` (0.5, desvio padrão / média) — acima disso a
+   cascata cai pro segmento, mesmo com amostra suficiente.
+5. **`valor_comparavel(promocao)` como fonte única do "valor real pra
+   comparação"** (`motor/percentil.py`, nova função) — caso real: Carrefour
+   anunciou "7 pontos" (20/08) mas só valia na marca própria, 1 ponto no
+   resto. Um 5 pontos incondicional perdia sem razão pra esse "7" que nunca
+   foi o valor real da maioria das compras. Aplicado em `pilar_historico_com_base`,
+   `pilar_atratividade`, `pilar_exclusividade`, na cascata de histórico
+   (família/segmento/mercado) e no `_mercado()` do orquestrador — sempre que
+   uma oferta condicionada entra numa base de comparação ou é ela mesma
+   posicionada, usa o piso (`valor_condicionado_piso`), não o número anunciado.
+6. **Bug de data no `montar_fila`** (`application/publicacao_service.py`) —
+   achado do usuário (Carrefour, campanha de um dia só, aprovada e some da
+   fila na própria meia-noite do dia em que ainda valia). `data_fim` guarda
+   meia-noite do início do último dia válido, não o fim dele; filtro mudou de
+   `data_fim >= agora` para `data_fim + timedelta(days=1) > agora`.
+
+Migration 0012 + `scripts_backfill/backfill_0012.py` recalculam
+`valor_condicionado_piso` para as condicionadas já existentes (backfill
+precisou de `from domain import governanca  # noqa: F401` pra resolver a FK
+de `promocoes.aprovada_por`, senão o `db.commit()` falhava com
+`NoReferencedTableError`). Confirmado por consulta direta: `reclassificar_todas`
+cobre PENDENTE **e** APROVADA, então as aprovações pendentes no dia já
+refletem todas as correções acima. Suíte de backend em 140 testes passando
+ao fim da sessão.
+
+### Garimpo Emissões: retomada com Claude in Chrome — Smiles funciona manualmente, automação ainda não
+
+Objetivo do usuário: reavaliar Smiles, LATAM e os dois sistemas da Azul
+(site principal e `azulpelomundo`) agora que o Chrome com a extensão Claude
+está instalado — sem nunca inserir login/senha em nome dele (login manual
+fica sempre com o usuário; combinado explicitamente pro caso da Smiles e
+adiado pro da LATAM).
+
+**LATAM**: confirma o que já estava registrado na seção 5 — busca com
+milhas exige login antes de qualquer resultado. Não foi contornado; o
+usuário planeja testar pessoalmente, logando manualmente, em sessão futura.
+
+**Smiles — achado novo, contradiz parcialmente o handoff anterior**: a
+seção 5 registrava Smiles como "fechada, sem caminho técnico conhecido"
+(Akamai bloqueia até em navegador real e visível). O teste de hoje
+**qualifica** essa afirmação: o usuário conseguiu acessar e buscar voos
+manualmente pelo Chrome real dele (GIG→MCO e GIG→REC, preços reais
+carregados), mas a primeira busca de uma sessão trava num spinner
+("Aguarde enquanto buscamos os melhores voos...") que só se resolve com
+refresh manual da página — às vezes uma vez, às vezes nem precisa,
+aparentemente dependendo de quanto histórico/uso aquele perfil de navegador
+já acumulou.
+
+Reproduzido de forma controlada: um script Playwright novo (perfil sem
+histórico nenhum) reproduziu o mesmo spinner e travou; `page.reload()`
+automatizado **não** resolveu no mesmo teste, ao contrário do refresh manual
+do usuário. Hipótese em teste agora (não confirmada): o que destrava não é
+"a mesma sessão", é reputação/histórico acumulado do perfil de navegador —
+cookies, uso real, tempo de existência. Ação em andamento: criado um perfil
+Chrome real dedicado e persistente (`launch_persistent_context` com
+`channel="chrome"`, diretório
+`coletor-emissoes-azul/perfil-smiles-dedicado/`, **não** o perfil pessoal do
+usuário), que ele está usando manualmente nos próximos dias pra "amadurecer"
+antes de testar o coletor automatizado nele. Ainda sem resultado — a
+primeira tentativa, feita minutos depois de criado, travou igual (esperado,
+perfil zerado).
+
+Ferramentas empíricas descobertas nesse teste manual (não commitadas, só em
+script de rascunho), úteis se a automação avançar: origem via
+`get_by_placeholder('Origem')` (não `get_by_text`, é input); destino via
+`#inp_flightDestination_1` (placeholder ambíguo colide com campo de hotéis);
+banner de cookies precisa ser aceito duas vezes (reaparece depois da seleção
+de destino); seleção de dia do calendário precisa filtrar por posição
+(`bounding_box`) porque o mesmo texto do dia também bate num slider-dot não
+relacionado do carrossel.
+
+**Azul (os dois sistemas)**: `--limite 1` do `coletor_emissoes_azul.py`
+rodado de verdade hoje, nas duas fontes — os dois deram timeout de 30s
+esperando o formulário aparecer. Confirmado via navegador que não é bug de
+seletor: o site principal devolve a página de rate-limit própria ("Ops! Só
+um momento... IP: 189.29.149.17") e o `azulpelomundo` devolve "Access
+Denied" do Akamai puro. **O bloqueio de 21/08 persiste até hoje** — mais de
+duas semanas depois, não é questão de horas, é bloqueio de vários dias no
+mínimo. Duração exata e critério de liberação seguem desconhecidos.
+
+**Achado sobre o próprio Claude in Chrome**: a ferramenta tem bloqueio
+próprio, a nível de tool, para navegar a `smiles.com.br` e `voeazul.com.br`
+("Navigation to this domain is not allowed") — diferente do caso da LATAM,
+que só pede permissão. Reproduzido em abas novas e grupos de abas novos, não
+é artefato de sessão velha. Não impediu a investigação (o usuário navegou
+manualmente e compartilhou screenshots/diagnóstico de rede), mas significa
+que esse tool não serve para automatizar Smiles/Azul mesmo que o bloqueio de
+IP se resolva — só serve para o usuário mesmo dirigir e a IA observar.
+
+### Pendências abertas desta sessão
+
+- Decidir se/quando testar a Azul de novo (esperar mais / trocar de rede /
+  pausar essa frente) — não decidido.
+- Deixar o perfil Chrome dedicado da Smiles amadurecer com uso real antes de
+  testar o coletor automatizado nele.
+- LATAM: usuário ainda vai testar pessoalmente com login manual — não feito.
+- Reconferir os números da seção 3 (estão de 18/08) e o roteiro da seção 9
+  (de 21/08) contra o banco real — não feito nesta sessão, o foco foi
+  calibragem + Emissões, não uma auditoria de números.
+- Nada da investigação de Emissões de hoje foi commitada — só existe neste
+  handoff e em scripts de rascunho fora do controle de versão.

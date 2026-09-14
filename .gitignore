@@ -29,3 +29,7 @@ diagnostico.png
 
 # Node (caso o painel admin ganhe build step no futuro)
 node_modules/
+
+# Perfil de Chrome dedicado pra "amadurecer" reputação na investigação de
+# Emissões (Smiles) — cookies e dado de sessão real, nunca versionar.
+coletor-emissoes-azul/perfil-smiles-dedicado/
