@@ -156,6 +156,23 @@ def pilar_facilidade(promocao: Promocao) -> float:
     return _clamp(nota)
 
 
+# Um recorde na faixa Clube Livelo é real — o cliente pode assinar e
+# receber — mas não é a mesma coisa que um recorde aberto a qualquer
+# comprador, que continua sendo o sinal dominante. Decisão do usuário
+# (14/09), caso real da Centauro: 15 pontos só de Clube era recorde do
+# parceiro (o anterior era 11), enquanto o "sem clube" nunca passou de 6.
+PESO_RECORDE_CLUBE = 0.2
+
+
+def _nota_recorde(valor: Decimal, recorde: Decimal) -> float:
+    if valor > recorde:
+        return 100.0  # novo recorde
+    if valor == recorde:
+        return 85.0  # empatou o recorde
+    razao = float(valor) / float(recorde)
+    return _clamp(razao * 70.0)
+
+
 def pilar_exclusividade(promocao: Promocao, historico: HistoricoFamilia) -> float:
     """Mede o quão raro/recorde é o valor desta promoção.
 
@@ -169,15 +186,20 @@ def pilar_exclusividade(promocao: Promocao, historico: HistoricoFamilia) -> floa
     # valor_comparavel: `maior_valor_historico` já vem do piso das ofertas
     # condicionadas (ver `historico.py`), então o "recorde" a bater é o
     # valor real garantido, não o anunciado (achado do usuário, 09/09).
-    valor = valor_comparavel(promocao)
+    nota = _nota_recorde(valor_comparavel(promocao), historico.maior_valor_historico)
 
-    if valor > historico.maior_valor_historico:
-        return 100.0  # novo recorde
-    if valor == historico.maior_valor_historico:
-        return 85.0  # empatou o recorde
+    # Se esta oferta também tem faixa Clube, o recorde dessa faixa conta,
+    # só que com peso bem menor que o recorde sem clube (achado do usuário,
+    # 14/09) — ver `PESO_RECORDE_CLUBE`. Sem recorde anterior na faixa
+    # Clube pra comparar, a primeira observação já vale como recorde (100),
+    # mesmo tratamento que o histórico geral daria à primeira campanha.
+    pontuacao_clube = getattr(promocao, "pontuacao_clube", None)
+    if pontuacao_clube is not None:
+        recorde_clube = historico.maior_valor_historico_clube
+        nota_clube = 100.0 if recorde_clube is None else _nota_recorde(pontuacao_clube, recorde_clube)
+        nota = nota * (1 - PESO_RECORDE_CLUBE) + nota_clube * PESO_RECORDE_CLUBE
 
-    razao = float(valor) / float(historico.maior_valor_historico)
-    return _clamp(razao * 70.0)
+    return nota
 
 
 def pilar_confiabilidade_dados(promocao: Promocao) -> float:

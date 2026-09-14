@@ -25,6 +25,13 @@ class HistoricoFamilia:
     total_campanhas_janela: int
     confianca_historica: str  # ALTA | MEDIA | BAIXA
     amostras: list[tuple[Decimal, float]] = field(default_factory=list)  # (pontuacao, peso)
+    # Recorde separado da faixa Clube Livelo (achado do usuário, 14/09, caso
+    # real da Centauro: "até 10 pontos" sem clube, mas 15 pontos pra quem tem
+    # Clube — o maior valor que o parceiro já ofereceu, mesmo que só nessa
+    # faixa). Fica de fora de `maior_valor_historico` de propósito: um
+    # recorde que exige assinatura não é a mesma coisa que um recorde aberto
+    # a qualquer comprador (ver `pilar_exclusividade`).
+    maior_valor_historico_clube: Decimal | None = None
 
 
 async def obter_historico_familia(
@@ -73,6 +80,7 @@ async def obter_historico_familia(
 
     agora = datetime.now(timezone.utc)
     amostras: list[tuple[Decimal, float]] = []
+    valores_clube: list[Decimal] = []
     for campanha in campanhas:
         dias_atras = (agora - campanha.created_at).days
         if dias_atras <= peso_temporal["recente_dias"]:
@@ -87,12 +95,17 @@ async def obter_historico_familia(
         # não deve entrar com o número anunciado nessa régua — entra com o
         # que qualquer comprador realmente recebia garantido.
         amostras.append((valor_comparavel(campanha), peso))
+        # Recorde da faixa Clube, à parte (achado do usuário, 14/09) — só
+        # entram campanhas que de fato tinham faixa Clube divulgada.
+        if campanha.pontuacao_clube is not None:
+            valores_clube.append(campanha.pontuacao_clube)
 
     soma_ponderada = sum(float(pontuacao) * peso for pontuacao, peso in amostras)
     soma_pesos = sum(peso for _, peso in amostras)
     media_ponderada = Decimal(str(soma_ponderada / soma_pesos)) if soma_pesos > 0 else None
 
     maior_valor = max(pontuacao for pontuacao, _ in amostras)
+    maior_valor_clube = max(valores_clube) if valores_clube else None
 
     confianca = "ALTA" if total >= limiar["min_campanhas"] else "BAIXA"
     if confianca == "ALTA" and total < limiar["min_campanhas"] * 2:
@@ -104,6 +117,7 @@ async def obter_historico_familia(
         total_campanhas_janela=total,
         confianca_historica=confianca,
         amostras=amostras,
+        maior_valor_historico_clube=maior_valor_clube,
     )
 
 
