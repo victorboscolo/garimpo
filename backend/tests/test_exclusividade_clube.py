@@ -1,11 +1,13 @@
-"""Recorde na faixa Clube Livelo entra no pilar Exclusividade, com peso
-menor que o recorde sem clube.
+"""Recorde na faixa Clube Livelo entra no pilar Exclusividade, com o
+mesmo peso do recorde sem clube.
 
 Caso real que motivou a mudança (14/09): a Centauro anunciou "até 10
 pontos", mas quem tem Clube Livelo ganhava 15 — o maior valor que a
 Centauro já ofereceu (o recorde anterior, sem clube, nunca passou de 6).
-O usuário decidiu: o recorde de clube é real e deve contar, mas pesa bem
-menos que um recorde aberto a qualquer comprador.
+O peso começou em 0.2 (recorde de clube conta bem menos), mas o caso da
+Insider Store (15/09) mostrou que isso praticamente anulava o recorde na
+nota final — o usuário pediu pra subir o peso do recorde de clube até
+ficar igual ao do recorde sem clube (`PESO_RECORDE_CLUBE = 0.5`).
 """
 from decimal import Decimal
 from types import SimpleNamespace
@@ -23,10 +25,9 @@ def _promocao(**ajustes):
     return SimpleNamespace(**padrao)
 
 
-def test_recorde_de_clube_da_um_bonus_mas_nao_domina_a_nota():
-    """Sem o recorde de clube, a oferta empataria o recorde sem-clube (85).
-    Com um novo recorde de clube (15 > 11), o bônus empurra a nota pra
-    cima, mas o peso do recorde sem clube (85) ainda domina.
+def test_recorde_de_clube_pesa_igual_ao_recorde_sem_clube():
+    """Sem o recorde de clube, a oferta empataria o recorde sem-clube
+    (85). Com um novo recorde de clube (15 > 11), os dois pesam igual.
     """
     promocao = _promocao(pontuacao_clube=Decimal("15"))
     historico = HistoricoFamilia(
@@ -35,8 +36,8 @@ def test_recorde_de_clube_da_um_bonus_mas_nao_domina_a_nota():
         maior_valor_historico_clube=Decimal("11"),
     )
     # sem-clube: piso 2 empata o recorde de 2 -> 85. clube: 15 > 11 -> 100.
-    # 85*0.8 + 100*0.2 = 88.0
-    assert pilar_exclusividade(promocao, historico) == 88.0
+    # 85*0.5 + 100*0.5 = 92.5
+    assert pilar_exclusividade(promocao, historico) == 92.5
 
 
 def test_sem_faixa_clube_comportamento_nao_muda():
@@ -52,11 +53,10 @@ def test_sem_faixa_clube_comportamento_nao_muda():
     assert pilar_exclusividade(promocao, historico) == 85.0
 
 
-def test_recorde_sem_clube_pesa_mais_que_recorde_de_clube():
-    """Um recorde sem clube domina mesmo quando a faixa clube não é
-    recorde nenhum: bater o recorde geral (100) com um clube mediano (70,
-    abaixo do recorde de clube 20) ainda fica bem mais perto de 100 do
-    que de 50-50.
+def test_recorde_de_clube_fraco_puxa_a_nota_pra_baixo_tambem():
+    """Com peso igual, um desempenho fraco na faixa clube não é mais
+    diluído: bater o recorde geral (100) mas ficar longe do recorde de
+    clube (52,5) puxa a média pro meio, não perto de 100.
     """
     promocao = _promocao(
         pontuacao=Decimal("10"), valor_condicionado=False, pontuacao_clube=Decimal("15"),
@@ -67,10 +67,8 @@ def test_recorde_sem_clube_pesa_mais_que_recorde_de_clube():
         maior_valor_historico_clube=Decimal("20"),
     )
     # sem-clube: 10 > 8 -> 100 (novo recorde). clube: 15 < 20 -> razão*70 = 52.5
-    # 100*0.8 + 52.5*0.2 = 90.5
-    nota = pilar_exclusividade(promocao, historico)
-    assert nota == 90.5
-    assert nota > 85  # o recorde sem clube domina, mesmo com clube mediano
+    # 100*0.5 + 52.5*0.5 = 76.25
+    assert pilar_exclusividade(promocao, historico) == 76.25
 
 
 def test_primeira_oferta_com_clube_ja_conta_como_recorde_de_clube():
@@ -85,4 +83,5 @@ def test_primeira_oferta_com_clube_ja_conta_como_recorde_de_clube():
         maior_valor_historico_clube=None,
     )
     # sem-clube: 85 (empate). clube: sem recorde anterior -> 100.
-    assert pilar_exclusividade(promocao, historico) == 88.0
+    # 85*0.5 + 100*0.5 = 92.5
+    assert pilar_exclusividade(promocao, historico) == 92.5

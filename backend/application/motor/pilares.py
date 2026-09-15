@@ -157,11 +157,12 @@ def pilar_facilidade(promocao: Promocao) -> float:
 
 
 # Um recorde na faixa Clube Livelo é real — o cliente pode assinar e
-# receber — mas não é a mesma coisa que um recorde aberto a qualquer
-# comprador, que continua sendo o sinal dominante. Decisão do usuário
-# (14/09), caso real da Centauro: 15 pontos só de Clube era recorde do
-# parceiro (o anterior era 11), enquanto o "sem clube" nunca passou de 6.
-PESO_RECORDE_CLUBE = 0.2
+# receber. Começou em 0.2 (14/09, caso Centauro), mas o caso da Insider
+# Store (15/09: piso real de 1 ponto, recorde de Clube batendo 20 contra
+# 13) mostrou que esse peso baixo praticamente anulava o recorde na nota
+# final — decisão do usuário: subir pra peso igual ao do recorde sem
+# clube, pra que bater um recorde de clube pese de verdade.
+PESO_RECORDE_CLUBE = 0.5
 
 
 def _nota_recorde(valor: Decimal, recorde: Decimal) -> float:
@@ -188,11 +189,11 @@ def pilar_exclusividade(promocao: Promocao, historico: HistoricoFamilia) -> floa
     # valor real garantido, não o anunciado (achado do usuário, 09/09).
     nota = _nota_recorde(valor_comparavel(promocao), historico.maior_valor_historico)
 
-    # Se esta oferta também tem faixa Clube, o recorde dessa faixa conta,
-    # só que com peso bem menor que o recorde sem clube (achado do usuário,
-    # 14/09) — ver `PESO_RECORDE_CLUBE`. Sem recorde anterior na faixa
-    # Clube pra comparar, a primeira observação já vale como recorde (100),
-    # mesmo tratamento que o histórico geral daria à primeira campanha.
+    # Se esta oferta também tem faixa Clube, o recorde dessa faixa conta
+    # com o mesmo peso do recorde sem clube — ver `PESO_RECORDE_CLUBE`.
+    # Sem recorde anterior na faixa Clube pra comparar, a primeira
+    # observação já vale como recorde (100), mesmo tratamento que o
+    # histórico geral daria à primeira campanha.
     pontuacao_clube = getattr(promocao, "pontuacao_clube", None)
     if pontuacao_clube is not None:
         recorde_clube = historico.maior_valor_historico_clube
