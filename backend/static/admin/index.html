@@ -949,7 +949,9 @@ function renderOpcaoEmissao(rotulo, o) {
       </div>
     `;
   }
-  const unidade = o.programa_nome === "Smiles" ? "milhas" : "pontos";
+  // Azul chama de "pontos"; Smiles e LATAM chamam de "milhas" — mesma
+  // moeda, nome diferente por programa.
+  const unidade = o.programa_nome === "Azul" ? "pontos" : "milhas";
   const paradasTexto = o.paradas === 0 ? "Voo direto" : `${o.paradas} parada${o.paradas === 1 ? "" : "s"}`;
   const cia = nomeCompanhia(o.companhia_operadora);
   return `
