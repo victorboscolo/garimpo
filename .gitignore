@@ -35,3 +35,6 @@ node_modules/
 # nunca versionar. Um por site: reputação não atravessa domínio (achado
 # 17/09 — o perfil da Smiles, já usado por dias, não destravou a Azul).
 coletor-emissoes-azul/perfil-*-dedicado/
+
+# Diretório interno do SeleniumBase (locks/downloads do modo uc=True)
+coletor-emissoes-azul/downloaded_files/
