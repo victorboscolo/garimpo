@@ -39,10 +39,16 @@ async def registrar_oferta(
     db, rota_id, data_ida: date, classe: str, pontos: int,
     taxa_reais: Decimal | None = None, companhia_operadora: str | None = None,
     paradas: int | None = None, assentos_restantes: int | None = None,
+    duracao_texto: str | None = None,
 ):
     """Registra a oferta mais barata de uma perna (só ida — decisão do
     usuário, 21/08). Não recebe data_volta: uma oferta de volta é outro
     registro, na rota oposta.
+
+    Pode ser chamado mais de uma vez pela mesma coleta (rota+data+classe)
+    quando o coletor separa "mais barata direto" de "mais barata com
+    parada" (decisão do usuário, 17/09) — cada chamada é uma linha
+    imutável própria, diferenciada pelo próprio `paradas` que ela grava.
     """
     from domain.emissoes import OfertaEmissao
 
@@ -50,6 +56,7 @@ async def registrar_oferta(
         rota_id=rota_id, data_ida=data_ida, classe=classe, pontos=pontos,
         taxa_reais=taxa_reais, companhia_operadora=companhia_operadora,
         paradas=paradas, assentos_restantes=assentos_restantes,
+        duracao_texto=duracao_texto,
     )
     db.add(oferta)
     await db.commit()

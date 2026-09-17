@@ -27,6 +27,7 @@ class OfertaEmissaoIn(BaseModel):
     companhia_operadora: str | None = None
     paradas: int | None = None
     assentos_restantes: int | None = None
+    duracao_texto: str | None = None
 
 
 @router.post("/ofertas")
@@ -46,6 +47,7 @@ async def registrar_oferta(payload: OfertaEmissaoIn, db: AsyncSession = Depends(
         db, rota_id=rota.id, data_ida=payload.data_ida, classe=payload.classe, pontos=payload.pontos,
         taxa_reais=payload.taxa_reais, companhia_operadora=payload.companhia_operadora,
         paradas=payload.paradas, assentos_restantes=payload.assentos_restantes,
+        duracao_texto=payload.duracao_texto,
     )
     return {"id": str(oferta.id)}
 

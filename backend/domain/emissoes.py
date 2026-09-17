@@ -75,8 +75,18 @@ class OfertaEmissao(Base):
     classe: Mapped[str] = mapped_column(String(20), nullable=False)  # ECONOMY | BUSINESS
 
     pontos: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Não populado pelos coletores desde 17/09 (decisão do usuário: só
+    # milhas) — o valor que existia aqui vinha de um produto diferente da
+    # oferta em pontos (a opção 100%-dinheiro ou milhas+dinheiro, que os
+    # sites mostram ao lado, não uma taxa sobre a própria oferta em
+    # pontos). Fica no schema porque o conceito "taxa em reais separada da
+    # tarifa" ainda pode voltar a ter uso — ver migration 0013.
     taxa_reais: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     companhia_operadora: Mapped[str | None] = mapped_column(String(100))
+    # Texto tal qual o site mostra ("11h25", "02h50min") — decisão do
+    # usuário (17/09): não converter pra minutos, pra não supor uma
+    # precisão que a fonte não garante.
+    duracao_texto: Mapped[str | None] = mapped_column(String(20))
     # 0 = voo direto, 1+ = número de conexões. Substituiu um `voo_direto`
     # booleano (decisão do usuário, 21/08) — estritamente mais informativo,
     # direto vira só `paradas == 0`.

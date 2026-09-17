@@ -14,13 +14,23 @@ o `fetch` de fora (sem ter clicado em nada) devolve 400
 `MISSING_TOKEN` — mesmo já com os cookies de uma sessão que carregou a
 página com sucesso.
 
-`extrair_mais_barata_azul_pelo_mundo_dom` é o caminho que o coletor usa de
+`extrair_ofertas_azul_pelo_mundo_dom` é o caminho que o coletor usa de
 verdade agora: lê o HTML já renderizado (mesmo princípio do site principal,
 `parsing_site_principal.py`) — o resultado chega na tela de qualquer jeito,
 então não precisa da API crua. Cada oferta é um `.componentFlight`; dentro
-dele, `.labelValuePoints` é o preço em pontos, `.labelPointsPlusMoney` tem a
-taxa em reais da opção combinada, `.icon-XX` (classe, não texto) é o código
-IATA da companhia, e o texto de conexão é "Voo direto" ou "N Parada(s)".
+dele, `.labelValuePoints` é o preço em pontos, `.icon-XX` (classe, não
+texto) é o código IATA da companhia, `.elapsedFlightTime` é a duração total
+(texto, "11h25"), e o texto de conexão é "Voo direto" ou "N Parada(s)".
+
+Devolve duas ofertas, não uma (decisão do usuário, 17/09): a mais barata
+direto e a mais barata com parada, cada uma sua própria linha em
+`ofertas_emissao` — nenhuma domina a outra, porque nem todo mundo aceita
+trocar tempo de voo por preço.
+
+`taxa_reais` não é mais preenchido (decisão do usuário, 17/09: só milhas) —
+o valor que existia em `.labelPointsPlusMoney` era de uma oferta
+alternativa (menos pontos + dinheiro), não uma taxa sobre a oferta em
+pontos.
 """
 from __future__ import annotations
 
@@ -52,17 +62,10 @@ def extrair_mais_barata_azul_pelo_mundo(resposta: dict) -> dict | None:
 
 
 _PADRAO_PONTOS = re.compile(r'<div class="labelValuePoints">([\d.]+)</div>')
-_PADRAO_TAXA = re.compile(r"R\$\s*([\d.,]+)")
 _PADRAO_COMPANHIA = re.compile(r'"icon-([A-Za-z0-9]+)"')
 _PADRAO_PARADAS = re.compile(r"(\d+)\s*[Pp]arada")
 _PADRAO_DIRETO = re.compile(r"\bVoo direto\b")
-
-
-def _texto_para_reais(texto: str) -> float | None:
-    achado = _PADRAO_TAXA.search(texto)
-    if achado is None:
-        return None
-    return float(achado.group(1).replace(".", "").replace(",", "."))
+_PADRAO_DURACAO = re.compile(r'elapsedFlightTime[^>]*>([^<]+)</label>')
 
 
 def _paradas_do_texto(texto: str) -> int | None:
@@ -74,25 +77,41 @@ def _paradas_do_texto(texto: str) -> int | None:
     return None
 
 
-def extrair_mais_barata_azul_pelo_mundo_dom(linhas_html: list[str]) -> dict | None:
+def _oferta_da_linha(linha: str) -> dict | None:
+    achado_pontos = _PADRAO_PONTOS.search(linha)
+    if achado_pontos is None:
+        return None
+
+    companhia = _PADRAO_COMPANHIA.search(linha)
+    duracao = _PADRAO_DURACAO.search(linha)
+    return {
+        "pontos": int(achado_pontos.group(1).replace(".", "")),
+        "companhia_operadora": companhia.group(1) if companhia else None,
+        "paradas": _paradas_do_texto(linha),
+        "duracao_texto": duracao.group(1).strip() if duracao else None,
+    }
+
+
+def extrair_ofertas_azul_pelo_mundo_dom(linhas_html: list[str]) -> dict:
     """Varre as linhas `.componentFlight` já renderizadas (uma por voo) e
-    devolve a mais barata em pontos, ou None se nenhuma linha tem preço
-    (rota sem oferta pra essa data — não é erro).
+    devolve as duas mais baratas — a melhor direto e a melhor com parada,
+    cada uma podendo ser `None` se a categoria não tiver nenhuma oferta
+    (ex: rota sem voo direto nenhum — não é erro).
+
+    Devolve `{"direto": dict | None, "com_parada": dict | None}`.
     """
-    melhor = None
+    melhor_direto = None
+    melhor_com_parada = None
     for linha in linhas_html:
-        achado_pontos = _PADRAO_PONTOS.search(linha)
-        if achado_pontos is None:
-            continue
-        pontos = int(achado_pontos.group(1).replace(".", ""))
-        if melhor is not None and pontos >= melhor["pontos"]:
+        oferta = _oferta_da_linha(linha)
+        if oferta is None:
             continue
 
-        companhia = _PADRAO_COMPANHIA.search(linha)
-        melhor = {
-            "pontos": pontos,
-            "taxa_reais": _texto_para_reais(linha),
-            "companhia_operadora": companhia.group(1) if companhia else None,
-            "paradas": _paradas_do_texto(linha),
-        }
-    return melhor
+        if oferta["paradas"] == 0:
+            if melhor_direto is None or oferta["pontos"] < melhor_direto["pontos"]:
+                melhor_direto = oferta
+        elif oferta["paradas"] is not None and oferta["paradas"] > 0:
+            if melhor_com_parada is None or oferta["pontos"] < melhor_com_parada["pontos"]:
+                melhor_com_parada = oferta
+
+    return {"direto": melhor_direto, "com_parada": melhor_com_parada}

@@ -26,7 +26,7 @@ from datetime import date, timedelta
 import httpx
 from seleniumbase import Driver
 
-from parsing_smiles import extrair_mais_barata_smiles_dom
+from parsing_smiles import extrair_ofertas_smiles_dom
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("garimpo.coletor_emissoes_smiles")
@@ -65,8 +65,10 @@ def _url_busca(origem: str, destino: str, data_ida: date) -> str:
     )
 
 
-def buscar_smiles(driver: Driver, origem: str, destino: str) -> tuple[dict | None, date]:
-    """Devolve (oferta ou None, data efetivamente buscada)."""
+def buscar_smiles(driver: Driver, origem: str, destino: str) -> tuple[dict, date]:
+    """Devolve (`{"direto": oferta | None, "com_parada": oferta | None}`,
+    data efetivamente buscada).
+    """
     data_ida = date.today() + timedelta(days=DIAS_A_FRENTE)
     url = _url_busca(origem, destino, data_ida)
     logger.info("Smiles: buscando %s -> %s (%s)", origem, destino, data_ida)
@@ -82,7 +84,7 @@ def buscar_smiles(driver: Driver, origem: str, destino: str) -> tuple[dict | Non
         driver.get(url)
         cartoes = _esperar_cartoes(driver)
 
-    resultado = extrair_mais_barata_smiles_dom(cartoes)
+    resultado = extrair_ofertas_smiles_dom(cartoes)
     return resultado, data_ida
 
 
@@ -116,10 +118,10 @@ def enviar_oferta(client: httpx.Client, rota: dict, data_ida: date, oferta: dict
         "data_ida": data_ida.isoformat(),
         "classe": CLASSE,
         "pontos": oferta["pontos"],
-        "taxa_reais": oferta.get("taxa_reais"),
         "companhia_operadora": oferta.get("companhia_operadora"),
         "paradas": oferta.get("paradas"),
         "assentos_restantes": oferta.get("assentos_restantes"),
+        "duracao_texto": oferta.get("duracao_texto"),
     }
     try:
         resposta = client.post(API_OFERTAS_URL, json=payload, timeout=10.0)
@@ -164,21 +166,26 @@ def main(limite: int) -> None:
             driver = Driver(uc=True, headless=False)
             try:
                 try:
-                    oferta, data_ida = buscar_smiles(driver, rota["origem"], rota["destino"])
+                    ofertas, data_ida = buscar_smiles(driver, rota["origem"], rota["destino"])
                 except Exception:
                     logger.exception("Falha buscando %s -> %s (Smiles)", rota["origem"], rota["destino"])
                     falhas += 1
                     continue
 
-                if oferta is None:
+                # Duas categorias, cada uma sua própria linha (decisão do
+                # usuário, 17/09) — uma pode existir sem a outra.
+                if ofertas["direto"] is None and ofertas["com_parada"] is None:
                     logger.info("  %s -> %s: sem oferta disponível.", rota["origem"], rota["destino"])
                     sem_oferta += 1
                     continue
 
-                if enviar_oferta(client, rota, data_ida, oferta):
-                    gravadas += 1
-                else:
-                    falhas += 1
+                for oferta in (ofertas["direto"], ofertas["com_parada"]):
+                    if oferta is None:
+                        continue
+                    if enviar_oferta(client, rota, data_ida, oferta):
+                        gravadas += 1
+                    else:
+                        falhas += 1
             finally:
                 driver.quit()
 

@@ -31,7 +31,7 @@ from datetime import date, timedelta
 import httpx
 from seleniumbase import Driver
 
-from parsing import extrair_mais_barata_azul_pelo_mundo_dom
+from parsing import extrair_ofertas_azul_pelo_mundo_dom
 from urls import url_azul_pelo_mundo
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -49,8 +49,9 @@ CLASSE = "ECONOMY"
 # — comece pequeno (`--limite`) até ter mais dados.
 
 
-def buscar_azul_pelo_mundo(driver: Driver, origem: str, destino: str) -> tuple[dict | None, date]:
-    """Devolve (oferta ou None, data efetivamente buscada).
+def buscar_azul_pelo_mundo(driver: Driver, origem: str, destino: str) -> tuple[dict, date]:
+    """Devolve (`{"direto": oferta | None, "com_parada": oferta | None}`,
+    data efetivamente buscada).
 
     Navega direto pra URL de resultado (`urls.py`) — sem aquecimento de
     sessão, achado de 17/09. Lê o preço do HTML já renderizado
@@ -71,9 +72,9 @@ def buscar_azul_pelo_mundo(driver: Driver, origem: str, destino: str) -> tuple[d
     if not linhas:
         # Rota fora do escopo do portal (ex: doméstica) devolve página em
         # branco, sem nenhuma linha de resultado — achado de 17/09, não é erro.
-        return None, data_ida
+        return {"direto": None, "com_parada": None}, data_ida
 
-    resultado = extrair_mais_barata_azul_pelo_mundo_dom(linhas)
+    resultado = extrair_ofertas_azul_pelo_mundo_dom(linhas)
     return resultado, data_ida
 
 
@@ -96,10 +97,10 @@ def enviar_oferta(client: httpx.Client, rota: dict, data_ida: date, oferta: dict
         "data_ida": data_ida.isoformat(),
         "classe": CLASSE,
         "pontos": oferta["pontos"],
-        "taxa_reais": oferta.get("taxa_reais"),
         "companhia_operadora": oferta.get("companhia_operadora"),
         "paradas": oferta.get("paradas"),
         "assentos_restantes": oferta.get("assentos_restantes"),
+        "duracao_texto": oferta.get("duracao_texto"),
     }
     try:
         resposta = client.post(API_OFERTAS_URL, json=payload, timeout=10.0)
@@ -137,21 +138,26 @@ def main(limite: int) -> None:
         try:
             for rota in rotas:
                 try:
-                    oferta, data_ida = buscar_azul_pelo_mundo(driver, rota["origem"], rota["destino"])
+                    ofertas, data_ida = buscar_azul_pelo_mundo(driver, rota["origem"], rota["destino"])
                 except Exception:
                     logger.exception("Falha buscando %s -> %s (AZUL_PELO_MUNDO)", rota["origem"], rota["destino"])
                     falhas += 1
                     continue
 
-                if oferta is None:
+                # Duas categorias, cada uma sua própria linha (decisão do
+                # usuário, 17/09) — uma pode existir sem a outra.
+                if ofertas["direto"] is None and ofertas["com_parada"] is None:
                     logger.info("  %s -> %s: sem oferta disponível.", rota["origem"], rota["destino"])
                     sem_oferta += 1
                     continue
 
-                if enviar_oferta(client, rota, data_ida, oferta):
-                    gravadas += 1
-                else:
-                    falhas += 1
+                for oferta in (ofertas["direto"], ofertas["com_parada"]):
+                    if oferta is None:
+                        continue
+                    if enviar_oferta(client, rota, data_ida, oferta):
+                        gravadas += 1
+                    else:
+                        falhas += 1
         finally:
             driver.quit()
 
