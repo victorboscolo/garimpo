@@ -80,3 +80,55 @@ async def listar_rotas_ativas(db, programa_nome: str | None = None):
         stmt = stmt.filter_by(programa_id=programa.id)
 
     return list((await db.execute(stmt)).scalars().all())
+
+
+async def listar_ofertas_atuais(db, programa_nome: str | None = None) -> list[dict]:
+    """A leitura pro painel: não o histórico inteiro, só o retrato de agora
+    — a oferta mais recente de cada rota, separada em direto/com-parada
+    (decisão do usuário, 17/09: as duas categorias continuam distintas
+    aqui, não é escolhida uma única "a melhor de todas").
+
+    Uma linha por (rota, categoria direto/com-parada) que já teve alguma
+    coleta; rota sem nenhuma oferta ainda não aparece.
+    """
+    from sqlalchemy import select
+
+    from domain.cadastros import Programa
+    from domain.emissoes import OfertaEmissao, RotaEmissao
+
+    stmt = (
+        select(OfertaEmissao, RotaEmissao, Programa)
+        .join(RotaEmissao, RotaEmissao.id == OfertaEmissao.rota_id)
+        .join(Programa, Programa.id == RotaEmissao.programa_id)
+        .order_by(OfertaEmissao.created_at.desc())
+    )
+    if programa_nome:
+        stmt = stmt.filter(Programa.nome == programa_nome)
+
+    linhas = (await db.execute(stmt)).all()
+
+    vistos: set[tuple] = set()
+    atuais: list[dict] = []
+    for oferta, rota, programa in linhas:
+        categoria = "DIRETO" if oferta.paradas == 0 else "COM_PARADA"
+        chave = (rota.id, categoria)
+        if chave in vistos:
+            continue
+        vistos.add(chave)
+        atuais.append({
+            "programa_nome": programa.nome,
+            "origem": rota.origem,
+            "destino": rota.destino,
+            "fonte": rota.fonte,
+            "categoria": categoria,
+            "classe": oferta.classe,
+            "data_ida": oferta.data_ida,
+            "pontos": oferta.pontos,
+            "duracao_texto": oferta.duracao_texto,
+            "companhia_operadora": oferta.companhia_operadora,
+            "paradas": oferta.paradas,
+            "assentos_restantes": oferta.assentos_restantes,
+            "coletado_em": oferta.created_at,
+        })
+
+    return atuais

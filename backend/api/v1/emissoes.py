@@ -52,6 +52,15 @@ async def registrar_oferta(payload: OfertaEmissaoIn, db: AsyncSession = Depends(
     return {"id": str(oferta.id)}
 
 
+@router.get("/ofertas")
+async def ofertas_atuais(programa_nome: str | None = None, db: AsyncSession = Depends(get_db)):
+    """O retrato de agora, pro painel: a oferta mais recente de cada rota,
+    separada em direto/com-parada. Não é o histórico inteiro — ver
+    `emissoes_service.listar_ofertas_atuais`.
+    """
+    return await emissoes_service.listar_ofertas_atuais(db, programa_nome)
+
+
 @router.get("/rotas")
 async def rotas(programa_nome: str | None = None, db: AsyncSession = Depends(get_db)):
     """Catálogo de rotas ativas — o que o coletor deve pesquisar."""

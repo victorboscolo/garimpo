@@ -514,6 +514,7 @@
     <div class="tab" data-filtro="">Todas</div>
     <div class="tab" data-filtro="__PUBLICAR__">Publicar</div>
     <div class="tab" data-filtro="__SAUDE__">Saúde</div>
+    <div class="tab" data-filtro="__EMISSOES__">Emissões</div>
   </div>
 </header>
 
@@ -582,6 +583,7 @@ function esc(valor) {
 async function carregar() {
   if (filtroAtual === "__PUBLICAR__") return carregarFila();
   if (filtroAtual === "__SAUDE__") return carregarSaude();
+  if (filtroAtual === "__EMISSOES__") return carregarEmissoes();
   const lista = document.getElementById("lista");
   const contador = document.getElementById("contador");
   lista.innerHTML = "";
@@ -861,6 +863,89 @@ async function carregarSaude() {
           ${execucao.falhas !== null ? `<div class="campo"><span class="rotulo">Falhas:</span> <span class="valor">${execucao.falhas}</span></div>` : ""}
           ${execucao.erro ? `<div class="campo"><span class="rotulo">Erro:</span> <span class="valor">${esc(execucao.erro)}</span></div>` : ""}
         ` : `<div class="sem-dados">Nenhuma execução registrada ainda.</div>`}
+      </div>
+    `;
+    lista.appendChild(card);
+  }
+}
+
+function formatDataVoo(isoDate) {
+  const [ano, mes, dia] = isoDate.split("-");
+  return `${dia}/${mes}/${ano}`;
+}
+
+// Uma linha por (rota, categoria) — agrupa em "GIG → LHR (Azul)" com até
+// duas sublinhas, Direto e Com parada (decisão do usuário, 17/09: as duas
+// categorias continuam separadas, nenhuma escolhida como "a" oferta).
+function agruparPorRota(ofertas) {
+  const porRota = new Map();
+  for (const o of ofertas) {
+    const chave = `${o.programa_nome}|${o.origem}|${o.destino}`;
+    if (!porRota.has(chave)) {
+      porRota.set(chave, { programa_nome: o.programa_nome, origem: o.origem, destino: o.destino, categorias: {} });
+    }
+    porRota.get(chave).categorias[o.categoria] = o;
+  }
+  return Array.from(porRota.values());
+}
+
+function renderCategoriaEmissao(rotulo, o) {
+  if (!o) return `<div class="campo"><span class="rotulo">${rotulo}:</span> <span class="valor">sem oferta encontrada ainda</span></div>`;
+  const paradasTexto = o.paradas === 0 ? "" : ` · ${o.paradas} parada${o.paradas === 1 ? "" : "s"}`;
+  const duracao = o.duracao_texto ? ` · ${esc(o.duracao_texto)}` : "";
+  const cia = o.companhia_operadora ? ` · ${esc(o.companhia_operadora)}` : "";
+  const unidade = o.programa_nome === "Smiles" ? "milhas" : "pontos";
+  return `
+    <div class="campo">
+      <span class="rotulo">${rotulo}:</span>
+      <span class="valor"><strong>${o.pontos.toLocaleString("pt-BR")} ${unidade}</strong>${duracao}${cia}${paradasTexto}</span>
+    </div>
+    <div class="campo"><span class="rotulo">Voo em:</span> <span class="valor">${formatDataVoo(o.data_ida)} · ${esc(o.classe)}</span></div>
+  `;
+}
+
+async function carregarEmissoes() {
+  const lista = document.getElementById("lista");
+  const contador = document.getElementById("contador");
+  document.getElementById("wrap-selecao-tudo").hidden = true;
+  document.getElementById("barra-lote").classList.add("oculta");
+  document.getElementById("btn-reprocessar").hidden = true;
+  lista.innerHTML = "";
+  contador.textContent = "Carregando emissões…";
+
+  let ofertas;
+  try {
+    ofertas = await (await fetch("/api/v1/emissoes/ofertas")).json();
+  } catch (e) {
+    contador.textContent = "Erro ao carregar. A API está rodando em localhost:8000?";
+    return;
+  }
+
+  if (ofertas.length === 0) {
+    contador.textContent = "0 rotas com oferta ainda";
+    lista.innerHTML = `<div class="empty-state"><div class="big">✈️</div>Nenhuma oferta coletada ainda.</div>`;
+    return;
+  }
+
+  const rotas = agruparPorRota(ofertas).sort((a, b) =>
+    a.programa_nome.localeCompare(b.programa_nome) || a.origem.localeCompare(b.origem) || a.destino.localeCompare(b.destino)
+  );
+  contador.textContent = `${rotas.length} rota${rotas.length === 1 ? "" : "s"} com oferta, só em milhas`;
+
+  for (const rota of rotas) {
+    const maisRecente = [rota.categorias.DIRETO, rota.categorias.COM_PARADA].filter(Boolean)
+      .sort((a, b) => new Date(b.coletado_em) - new Date(a.coletado_em))[0];
+    const card = document.createElement("div");
+    card.className = "card sem-selecao";
+    card.innerHTML = `
+      <div class="card-main">
+        <div class="card-top">
+          <span class="parceiro-nome">${esc(rota.origem)} → ${esc(rota.destino)}</span>
+          <span class="programa-tag">${esc(rota.programa_nome)}</span>
+        </div>
+        ${renderCategoriaEmissao("Direto", rota.categorias.DIRETO)}
+        ${renderCategoriaEmissao("Com parada", rota.categorias.COM_PARADA)}
+        <div class="coletado-em">Coletado em ${formatData(maisRecente.coletado_em)}</div>
       </div>
     `;
     lista.appendChild(card);
