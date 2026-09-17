@@ -498,6 +498,40 @@
   .saude-FALHA { background: var(--pouco-bg); color: var(--pouco); }
   .saude-ATRASADA { background: var(--comum-bg); color: var(--comum); }
   .saude-NUNCA_RODOU { background: var(--stone-100); color: var(--stone-700); }
+
+  /* ---- Emissões: comparativo lado a lado ---- */
+
+  .valor-emissao-data { font-size: 12px; color: var(--stone-700); margin-left: auto; }
+
+  .comparativo-emissao {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin: 10px 0 6px;
+  }
+  .opcao-emissao {
+    border: 1px solid var(--stone-200);
+    border-radius: 10px;
+    padding: 12px 14px;
+    background: var(--stone-50);
+  }
+  .opcao-vazia { display: flex; flex-direction: column; justify-content: center; }
+  .opcao-rotulo {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--stone-700);
+    margin-bottom: 6px;
+  }
+  .opcao-preco { font-size: 19px; font-weight: 700; color: var(--ink); line-height: 1.25; }
+  .opcao-unidade { font-size: 12px; font-weight: 600; color: var(--stone-700); }
+  .opcao-detalhe { font-size: 12px; color: var(--stone-700); margin-top: 3px; }
+  .opcao-sem-oferta { font-size: 12.5px; color: var(--stone-700); font-style: italic; }
+
+  @media (max-width: 640px) {
+    .comparativo-emissao { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>
@@ -874,8 +908,22 @@ function formatDataVoo(isoDate) {
   return `${dia}/${mes}/${ano}`;
 }
 
+// Nome por extenso dos códigos IATA que os coletores já trouxeram — a
+// Smiles já devolve nome completo (ex: "GOL Linhas Aéreas"), então o
+// fallback pro próprio código cobre qualquer companhia nova sem quebrar.
+const NOME_COMPANHIA = {
+  AF: "Air France", BA: "British Airways", IB: "Iberia", TP: "TAP Portugal",
+  AD: "Azul", G3: "GOL", LA: "LATAM", CM: "Copa Airlines",
+  AA: "American Airlines", DL: "Delta", UA: "United Airlines",
+  AZ: "ITA Airways", LH: "Lufthansa",
+};
+function nomeCompanhia(codigo) {
+  if (!codigo) return null;
+  return NOME_COMPANHIA[codigo] || codigo;
+}
+
 // Uma linha por (rota, categoria) — agrupa em "GIG → LHR (Azul)" com até
-// duas sublinhas, Direto e Com parada (decisão do usuário, 17/09: as duas
+// duas colunas, Direto e Com parada (decisão do usuário, 17/09: as duas
 // categorias continuam separadas, nenhuma escolhida como "a" oferta).
 function agruparPorRota(ofertas) {
   const porRota = new Map();
@@ -889,18 +937,28 @@ function agruparPorRota(ofertas) {
   return Array.from(porRota.values());
 }
 
-function renderCategoriaEmissao(rotulo, o) {
-  if (!o) return `<div class="campo"><span class="rotulo">${rotulo}:</span> <span class="valor">sem oferta encontrada ainda</span></div>`;
-  const paradasTexto = o.paradas === 0 ? "" : ` · ${o.paradas} parada${o.paradas === 1 ? "" : "s"}`;
-  const duracao = o.duracao_texto ? ` · ${esc(o.duracao_texto)}` : "";
-  const cia = o.companhia_operadora ? ` · ${esc(o.companhia_operadora)}` : "";
+// Layout de comparativo: as duas categorias lado a lado, preço em
+// destaque — pra comparar rápido, do jeito que se compara preço de
+// verdade, não uma lista de campos empilhados.
+function renderOpcaoEmissao(rotulo, o) {
+  if (!o) {
+    return `
+      <div class="opcao-emissao opcao-vazia">
+        <div class="opcao-rotulo">${rotulo}</div>
+        <div class="opcao-sem-oferta">Sem oferta encontrada ainda</div>
+      </div>
+    `;
+  }
   const unidade = o.programa_nome === "Smiles" ? "milhas" : "pontos";
+  const paradasTexto = o.paradas === 0 ? "Voo direto" : `${o.paradas} parada${o.paradas === 1 ? "" : "s"}`;
+  const cia = nomeCompanhia(o.companhia_operadora);
   return `
-    <div class="campo">
-      <span class="rotulo">${rotulo}:</span>
-      <span class="valor"><strong>${o.pontos.toLocaleString("pt-BR")} ${unidade}</strong>${duracao}${cia}${paradasTexto}</span>
+    <div class="opcao-emissao">
+      <div class="opcao-rotulo">${rotulo}</div>
+      <div class="opcao-preco">${o.pontos.toLocaleString("pt-BR")} <span class="opcao-unidade">${unidade}</span></div>
+      <div class="opcao-detalhe">${esc(paradasTexto)}${o.duracao_texto ? ` · ${esc(o.duracao_texto)}` : ""}</div>
+      ${cia ? `<div class="opcao-detalhe">${esc(cia)}</div>` : ""}
     </div>
-    <div class="campo"><span class="rotulo">Voo em:</span> <span class="valor">${formatDataVoo(o.data_ida)} · ${esc(o.classe)}</span></div>
   `;
 }
 
@@ -933,8 +991,11 @@ async function carregarEmissoes() {
   contador.textContent = `${rotas.length} rota${rotas.length === 1 ? "" : "s"} com oferta, só em milhas`;
 
   for (const rota of rotas) {
-    const maisRecente = [rota.categorias.DIRETO, rota.categorias.COM_PARADA].filter(Boolean)
-      .sort((a, b) => new Date(b.coletado_em) - new Date(a.coletado_em))[0];
+    const opcoes = [rota.categorias.DIRETO, rota.categorias.COM_PARADA].filter(Boolean);
+    const maisRecente = opcoes.sort((a, b) => new Date(b.coletado_em) - new Date(a.coletado_em))[0];
+    // As duas categorias vêm da mesma busca (mesma data/classe) — mostra
+    // isso uma vez só no topo, não repetido em cada coluna.
+    const referencia = opcoes[0];
     const card = document.createElement("div");
     card.className = "card sem-selecao";
     card.innerHTML = `
@@ -942,9 +1003,12 @@ async function carregarEmissoes() {
         <div class="card-top">
           <span class="parceiro-nome">${esc(rota.origem)} → ${esc(rota.destino)}</span>
           <span class="programa-tag">${esc(rota.programa_nome)}</span>
+          <span class="valor-emissao-data">${formatDataVoo(referencia.data_ida)} · ${esc(referencia.classe)}</span>
         </div>
-        ${renderCategoriaEmissao("Direto", rota.categorias.DIRETO)}
-        ${renderCategoriaEmissao("Com parada", rota.categorias.COM_PARADA)}
+        <div class="comparativo-emissao">
+          ${renderOpcaoEmissao("Direto", rota.categorias.DIRETO)}
+          ${renderOpcaoEmissao("Com parada", rota.categorias.COM_PARADA)}
+        </div>
         <div class="coletado-em">Coletado em ${formatData(maisRecente.coletado_em)}</div>
       </div>
     `;
