@@ -22,7 +22,13 @@ export PATH="/usr/local/bin:/opt/homebrew/bin:$PATH"
 GARIMPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 COLETOR_API_KEY=$(grep -E '^COLETOR_API_KEY=' "$GARIMPO_ROOT/.env" 2>/dev/null | cut -d '=' -f2-)
 
-API="http://127.0.0.1:8000/api/v1"
+# A partir de 18/09 a nuvem (Render), não mais o Docker local — só pra
+# reportar a execução no Painel de Saúde. O pg_dump abaixo continua sendo
+# do Postgres LOCAL (Camada 1); ver nota no HANDOFF sobre isso precisar
+# de decisão própria agora que o dado "de verdade" mora no Neon.
+API_BASE=$(grep -E '^API_BASE_URL=' "$GARIMPO_ROOT/.env" 2>/dev/null | cut -d '=' -f2-)
+API_BASE="${API_BASE:-http://127.0.0.1:8000}"
+API="$API_BASE/api/v1"
 AGORA=$(date "+%Y-%m-%d %H:%M:%S")
 DATA=$(date +%Y%m%d_%H%M%S)
 ARQUIVO="garimpo_${DATA}.sql.gz"

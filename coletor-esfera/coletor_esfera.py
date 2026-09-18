@@ -21,36 +21,53 @@ import httpx
 
 from esfera_api import ParceiroEsfera, buscar_parceiros, parceiro_para_bruta
 
-API_INGERIR_URL = "http://localhost:8000/api/v1/promocoes/ingerir"
-API_EXECUCOES_URL = "http://localhost:8000/api/v1/execucoes"
 PROGRAMA_NOME = "Esfera"
 JOB = "coletor_esfera"
 
 
-def _chave_api() -> str | None:
-    """Lê COLETOR_API_KEY do .env na raiz do repo — o painel passou a exigir
+def _ler_env(nome: str, padrao: str | None = None) -> str | None:
+    """Lê uma variável do .env na raiz do repo — o painel passou a exigir
     autenticação em toda rota (18/09), e o coletor roda em venv próprio,
     fora do Docker, sem env_file pra herdar a variável."""
-    if os.environ.get("COLETOR_API_KEY"):
-        return os.environ["COLETOR_API_KEY"]
+    if os.environ.get(nome):
+        return os.environ[nome]
     caminho = os.path.join(os.path.dirname(__file__), "..", ".env")
     try:
         with open(caminho) as f:
             for linha in f:
-                if linha.strip().startswith("COLETOR_API_KEY="):
+                if linha.strip().startswith(f"{nome}="):
                     return linha.strip().split("=", 1)[1]
     except FileNotFoundError:
         pass
-    return None
+    return padrao
 
 
-HEADERS = {"X-API-Key": _chave_api()} if _chave_api() else {}
+HEADERS = {"X-API-Key": _ler_env("COLETOR_API_KEY")} if _ler_env("COLETOR_API_KEY") else {}
+
+# A partir de 18/09 a nuvem (Render), não mais o Docker local — ver .env.example.
+API_BASE_URL = _ler_env("API_BASE_URL", "http://localhost:8000")
+API_INGERIR_URL = f"{API_BASE_URL}/api/v1/promocoes/ingerir"
+API_EXECUCOES_URL = f"{API_BASE_URL}/api/v1/execucoes"
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
 )
 logger = logging.getLogger("garimpo.coletor_esfera")
+
+
+def _aquecer(tentativas: int = 3, espera_segundos: float = 20.0) -> None:
+    """Acorda o backend antes da coleta de verdade — o Render (plano
+    grátis) dorme depois de 15 min sem acesso, e o cold start pode passar
+    de qualquer timeout individual de requisição do coletor."""
+    with httpx.Client(timeout=espera_segundos) as client:
+        for tentativa in range(1, tentativas + 1):
+            try:
+                if client.get(f"{API_BASE_URL}/health").status_code == 200:
+                    return
+            except httpx.RequestError as e:
+                logger.info("Aquecendo o backend (tentativa %d/%d): %s", tentativa, tentativas, e)
+    logger.warning("Backend não respondeu ao aquecimento — seguindo mesmo assim.")
 
 
 def coletar() -> list[ParceiroEsfera]:
@@ -128,6 +145,7 @@ def _reportar_execucao(status: str, **campos) -> None:
 
 
 def main():
+    _aquecer()
     try:
         parceiros = coletar()
     except Exception as e:

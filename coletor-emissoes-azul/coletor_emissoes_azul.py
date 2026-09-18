@@ -31,15 +31,15 @@ from datetime import date, timedelta
 import httpx
 from seleniumbase import Driver
 
-from chave_api import HEADERS
+from chave_api import API_BASE_URL, HEADERS, aquecer
 from parsing import extrair_ofertas_azul_pelo_mundo_dom
 from urls import url_azul_pelo_mundo
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("garimpo.coletor_emissoes_azul")
 
-API_ROTAS_URL = "http://localhost:8000/api/v1/emissoes/rotas?programa_nome=Azul"
-API_OFERTAS_URL = "http://localhost:8000/api/v1/emissoes/ofertas"
+API_ROTAS_URL = f"{API_BASE_URL}/api/v1/emissoes/rotas?programa_nome=Azul"
+API_OFERTAS_URL = f"{API_BASE_URL}/api/v1/emissoes/ofertas"
 
 DIAS_A_FRENTE = 30
 CLASSE = "ECONOMY"
@@ -124,6 +124,7 @@ def enviar_oferta(client: httpx.Client, rota: dict, data_ida: date, oferta: dict
 
 
 def main(limite: int) -> None:
+    aquecer()
     with httpx.Client(timeout=15.0, headers=HEADERS) as client:
         rotas = buscar_rotas(client, limite)
 

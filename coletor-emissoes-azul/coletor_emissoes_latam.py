@@ -38,14 +38,14 @@ from datetime import date, timedelta
 import httpx
 from playwright.async_api import async_playwright
 
-from chave_api import HEADERS
+from chave_api import API_BASE_URL, HEADERS, aquecer
 from parsing_latam import extrair_ofertas_latam_dom
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("garimpo.coletor_emissoes_latam")
 
-API_ROTAS_URL = "http://localhost:8000/api/v1/emissoes/rotas?programa_nome=LATAM"
-API_OFERTAS_URL = "http://localhost:8000/api/v1/emissoes/ofertas"
+API_ROTAS_URL = f"{API_BASE_URL}/api/v1/emissoes/rotas?programa_nome=LATAM"
+API_OFERTAS_URL = f"{API_BASE_URL}/api/v1/emissoes/ofertas"
 
 DIAS_A_FRENTE = 30
 CLASSE = "ECONOMY"
@@ -131,6 +131,7 @@ async def enviar_oferta(client: httpx.AsyncClient, rota: dict, data_ida: date, o
 
 
 async def main(limite: int) -> None:
+    aquecer()
     if not os.path.isdir(PERFIL_LATAM):
         logger.error(
             "Perfil %s não existe — o usuário precisa logar manualmente na LATAM "
