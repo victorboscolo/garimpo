@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from infrastructure.db.base import Base
+from infrastructure.db.url import preparar_conexao
 # Importar todos os módulos de modelos para o autogenerate enxergá-los:
 from domain import cadastros, promocoes, motor, governanca, emissoes  # noqa: F401
 
@@ -18,13 +19,9 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Mesmo motivo do `infrastructure/db/session.py`: provedores gerenciados
-# (Neon) mandam `?sslmode=require` na URL, parâmetro que o asyncpg não
-# entende — ele quer SSL via `connect_args`, não na própria URL.
-_database_url = os.environ["DATABASE_URL"]
-_connect_args = {}
-if "sslmode=require" in _database_url:
-    _database_url = _database_url.replace("?sslmode=require", "").replace("&sslmode=require", "")
-    _connect_args["ssl"] = "require"
+# (Neon) mandam parâmetros do libpq (sslmode, channel_binding) na URL que o
+# asyncpg não entende — ele quer SSL via `connect_args`, não na própria URL.
+_database_url, _connect_args = preparar_conexao(os.environ["DATABASE_URL"])
 
 config.set_main_option("sqlalchemy.url", _database_url)
 
