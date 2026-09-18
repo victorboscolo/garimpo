@@ -685,7 +685,7 @@
       <input type="checkbox" id="selecionar-tudo" onchange="alternarTodas(this.checked)">
       <span id="label-selecao-tudo">Selecionar todas</span>
     </label>
-    <button onclick="carregar()">↻ Atualizar</button>
+    <button id="btn-atualizar" onclick="carregar()">↻ Atualizar</button>
     <button id="btn-reprocessar" onclick="reprocessarTodas()">⚙ Reprocessar tudo</button>
   </div>
   <div id="lista"></div>
@@ -842,7 +842,12 @@ async function carregar() {
 
   contador.textContent = `${promocoes.length} promoç${promocoes.length === 1 ? "ão" : "ões"}, ordenadas pela nota`;
 
-  document.getElementById("btn-reprocessar").hidden = false;
+  // Nenhum dos dois faz sentido em Destaques: reprocessar reclassifica pelo
+  // motor (isso é curadoria, não vitrine), e atualizar é redundante — a
+  // aba já busca dado fresco a cada vez que é aberta (pedido do usuário,
+  // 18/09: "isso tem que ser feito toda vez que entrar nesse menu").
+  document.getElementById("btn-reprocessar").hidden = (filtroAtual === "__DESTAQUES__");
+  document.getElementById("btn-atualizar").hidden = (filtroAtual === "__DESTAQUES__");
   document.getElementById("acoes-lote").innerHTML = `
     <button class="lote-limpar" onclick="limparSelecao()">Limpar</button>
     <button class="lote-rejeitar" onclick="rejeitarLote()">Rejeitar selecionadas</button>
