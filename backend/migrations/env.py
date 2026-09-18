@@ -17,7 +17,16 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-config.set_main_option("sqlalchemy.url", os.environ["DATABASE_URL"])
+# Mesmo motivo do `infrastructure/db/session.py`: provedores gerenciados
+# (Neon) mandam `?sslmode=require` na URL, parâmetro que o asyncpg não
+# entende — ele quer SSL via `connect_args`, não na própria URL.
+_database_url = os.environ["DATABASE_URL"]
+_connect_args = {}
+if "sslmode=require" in _database_url:
+    _database_url = _database_url.replace("?sslmode=require", "").replace("&sslmode=require", "")
+    _connect_args["ssl"] = "require"
+
+config.set_main_option("sqlalchemy.url", _database_url)
 
 target_metadata = Base.metadata
 
@@ -40,6 +49,7 @@ async def run_migrations_online():
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args=_connect_args,
     )
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
