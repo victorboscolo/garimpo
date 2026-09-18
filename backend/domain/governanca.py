@@ -25,6 +25,20 @@ class Usuario(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+class TentativaLogin(Base):
+    """Controle de tentativas de login por e-mail, para bloqueio temporário
+    depois de várias senhas erradas — mesmo padrão usado no Guardião
+    Financeiro (`src/auth/tentativas.ts`). `email` é a própria chave: o
+    conjunto de tentativas existe só enquanto há falha recente, não é um
+    registro que precisa de UUID próprio.
+    """
+    __tablename__ = "tentativas_login"
+
+    email: Mapped[str] = mapped_column(String(200), primary_key=True)
+    tentativas: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    bloqueado_ate: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class Perfil(Base):
     __tablename__ = "perfis"
 

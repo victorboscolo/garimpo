@@ -15,6 +15,13 @@ set -uo pipefail
 # 10:44 de 19/08 com "docker: command not found", mesmo já validado à mão).
 export PATH="/usr/local/bin:/opt/homebrew/bin:$PATH"
 
+# O painel passou a exigir autenticação em toda rota (18/09) — script não é
+# humano, então usa a chave fixa de coletores/scripts, lida do .env na raiz
+# (o launchd não passa pelo shell interativo, então não dá pra contar com a
+# variável já estar exportada).
+GARIMPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+COLETOR_API_KEY=$(grep -E '^COLETOR_API_KEY=' "$GARIMPO_ROOT/.env" 2>/dev/null | cut -d '=' -f2-)
+
 API="http://127.0.0.1:8000/api/v1"
 AGORA=$(date "+%Y-%m-%d %H:%M:%S")
 DATA=$(date +%Y%m%d_%H%M%S)
@@ -50,6 +57,7 @@ reportar_execucao() {
   # Painel de Saúde que vai acusar isso pela ausência de execução recente.
   curl -s --max-time 10 -X POST "$API/execucoes" \
     -H "Content-Type: application/json" \
+    -H "X-API-Key: $COLETOR_API_KEY" \
     -d "$1" > /dev/null 2>&1 || true
 }
 

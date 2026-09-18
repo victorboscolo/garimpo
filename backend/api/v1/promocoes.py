@@ -6,6 +6,7 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import contains_eager
 
+from api.dependencies import usuario_atual
 from api.v1.schemas import (
     LoteResultadoOut,
     PromocaoAprovarLoteIn,
@@ -15,6 +16,7 @@ from api.v1.schemas import (
     PromocaoRejeitarLoteIn,
 )
 from application.ingestao_service import PromocaoBrutaIn, ingerir_promocao_bruta
+from domain.governanca import Usuario
 from domain.motor import ENTIDADE_PROMOCAO, Classificacao
 from domain.promocoes import Promocao
 from infrastructure.db.session import get_db
@@ -81,7 +83,7 @@ async def obter_promocao(promocao_id: uuid.UUID, db: AsyncSession = Depends(get_
 @router.post("/{promocao_id}/aprovar", response_model=PromocaoOut)
 async def aprovar_promocao(
     promocao_id: uuid.UUID,
-    # usuario_id viria do token JWT autenticado — omitido neste esqueleto inicial
+    usuario: Usuario | None = Depends(usuario_atual),
     db: AsyncSession = Depends(get_db),
 ):
     promocao = await db.get(Promocao, promocao_id)
@@ -92,7 +94,10 @@ async def aprovar_promocao(
 
     promocao.status = "APROVADA"
     promocao.aprovada_em = datetime.now(timezone.utc)
-    # TODO: promocao.aprovada_por = usuario_id_do_token
+    # None quando quem aprovou foi um script (chave de API), não um humano —
+    # não deveria acontecer na prática (aprovar é ação do painel), mas o
+    # campo é opcional exatamente por isso.
+    promocao.aprovada_por = usuario.id if usuario else None
     # TODO: disparar publicacao_service.publicar(promocao.id, tipo="PUBLICO") e tipo="AVANCADO"
 
     # Decisão deliberada: não reclassifica aqui, ao contrário de aprovar-lote.
@@ -109,6 +114,7 @@ async def aprovar_promocao(
 async def rejeitar_promocao(
     promocao_id: uuid.UUID,
     payload: PromocaoRejeitarIn,
+    usuario: Usuario | None = Depends(usuario_atual),
     db: AsyncSession = Depends(get_db),
 ):
     promocao = await db.get(Promocao, promocao_id)
@@ -120,7 +126,7 @@ async def rejeitar_promocao(
     promocao.status = "REJEITADA"
     promocao.motivo_rejeicao = payload.motivo_rejeicao
     promocao.aprovada_em = datetime.now(timezone.utc)
-    # TODO: promocao.aprovada_por = usuario_id_do_token
+    promocao.aprovada_por = usuario.id if usuario else None
 
     await db.commit()
     await db.refresh(promocao)
@@ -131,6 +137,7 @@ async def _decidir_lote(
     db: AsyncSession,
     ids: list[uuid.UUID],
     novo_status: str,
+    usuario: Usuario | None,
     motivo_rejeicao: str | None = None,
 ) -> LoteResultadoOut:
     """Aplica aprovação ou rejeição a um lote, tolerando falha parcial.
@@ -160,7 +167,7 @@ async def _decidir_lote(
         promocao.aprovada_em = agora
         if motivo_rejeicao is not None:
             promocao.motivo_rejeicao = motivo_rejeicao
-        # TODO: promocao.aprovada_por = usuario_id_do_token
+        promocao.aprovada_por = usuario.id if usuario else None
         processadas += 1
 
     await db.commit()
@@ -168,7 +175,11 @@ async def _decidir_lote(
 
 
 @router.post("/aprovar-lote", response_model=LoteResultadoOut)
-async def aprovar_lote(payload: PromocaoAprovarLoteIn, db: AsyncSession = Depends(get_db)):
+async def aprovar_lote(
+    payload: PromocaoAprovarLoteIn,
+    usuario: Usuario | None = Depends(usuario_atual),
+    db: AsyncSession = Depends(get_db),
+):
     """Aprova o lote e reprocessa as classificações em seguida.
 
     Aprovar não é um ato neutro sobre as demais promoções: desde que os pilares
@@ -186,16 +197,20 @@ async def aprovar_lote(payload: PromocaoAprovarLoteIn, db: AsyncSession = Depend
     """
     from application.motor.servico import reclassificar_todas
 
-    resultado = await _decidir_lote(db, payload.ids, novo_status="APROVADA")
+    resultado = await _decidir_lote(db, payload.ids, novo_status="APROVADA", usuario=usuario)
     if resultado.processadas > 0:
         await reclassificar_todas(db)
     return resultado
 
 
 @router.post("/rejeitar-lote", response_model=LoteResultadoOut)
-async def rejeitar_lote(payload: PromocaoRejeitarLoteIn, db: AsyncSession = Depends(get_db)):
+async def rejeitar_lote(
+    payload: PromocaoRejeitarLoteIn,
+    usuario: Usuario | None = Depends(usuario_atual),
+    db: AsyncSession = Depends(get_db),
+):
     return await _decidir_lote(
-        db, payload.ids, novo_status="REJEITADA", motivo_rejeicao=payload.motivo_rejeicao
+        db, payload.ids, novo_status="REJEITADA", usuario=usuario, motivo_rejeicao=payload.motivo_rejeicao
     )
 
 
@@ -209,8 +224,8 @@ async def ingerir_promocao(
     site de origem). Faz dedup/resolução/classificação via o mesmo
     serviço usado pelos coletores internos.
 
-    TODO: proteger este endpoint com autenticação (ex: chave de API
-    própria para coletores, separada do JWT de usuários do painel).
+    Protegido só por chave de API (ver `api/dependencies.py`) — quem chama
+    é sempre um script, nunca um humano logado no painel.
     """
     bruta = PromocaoBrutaIn(
         programa_nome=payload.programa_nome,

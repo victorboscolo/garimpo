@@ -31,6 +31,7 @@ from datetime import date, timedelta
 import httpx
 from seleniumbase import Driver
 
+from chave_api import HEADERS
 from parsing import extrair_ofertas_azul_pelo_mundo_dom
 from urls import url_azul_pelo_mundo
 
@@ -123,7 +124,7 @@ def enviar_oferta(client: httpx.Client, rota: dict, data_ida: date, oferta: dict
 
 
 def main(limite: int) -> None:
-    with httpx.Client(timeout=15.0) as client:
+    with httpx.Client(timeout=15.0, headers=HEADERS) as client:
         rotas = buscar_rotas(client, limite)
 
         if not rotas:

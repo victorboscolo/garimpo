@@ -14,6 +14,7 @@ manual, no painel, como em qualquer outra fonte.
 from __future__ import annotations
 
 import logging
+import os
 import sys
 
 import httpx
@@ -24,6 +25,26 @@ API_INGERIR_URL = "http://localhost:8000/api/v1/promocoes/ingerir"
 API_EXECUCOES_URL = "http://localhost:8000/api/v1/execucoes"
 PROGRAMA_NOME = "Esfera"
 JOB = "coletor_esfera"
+
+
+def _chave_api() -> str | None:
+    """Lê COLETOR_API_KEY do .env na raiz do repo — o painel passou a exigir
+    autenticação em toda rota (18/09), e o coletor roda em venv próprio,
+    fora do Docker, sem env_file pra herdar a variável."""
+    if os.environ.get("COLETOR_API_KEY"):
+        return os.environ["COLETOR_API_KEY"]
+    caminho = os.path.join(os.path.dirname(__file__), "..", ".env")
+    try:
+        with open(caminho) as f:
+            for linha in f:
+                if linha.strip().startswith("COLETOR_API_KEY="):
+                    return linha.strip().split("=", 1)[1]
+    except FileNotFoundError:
+        pass
+    return None
+
+
+HEADERS = {"X-API-Key": _chave_api()} if _chave_api() else {}
 
 logging.basicConfig(
     level=logging.INFO,
@@ -41,7 +62,7 @@ def coletar() -> list[ParceiroEsfera]:
 def enviar_para_api(parceiros: list[ParceiroEsfera]) -> dict:
     enviados, falhas, descartados = 0, 0, 0
 
-    with httpx.Client(timeout=30.0) as client:
+    with httpx.Client(timeout=30.0, headers=HEADERS) as client:
         for p in parceiros:
             payload = {
                 "programa_nome": PROGRAMA_NOME,
@@ -100,7 +121,7 @@ def _reportar_execucao(status: str, **campos) -> None:
     aqui só é logada, não propagada.
     """
     try:
-        with httpx.Client(timeout=10.0) as client:
+        with httpx.Client(timeout=10.0, headers=HEADERS) as client:
             client.post(API_EXECUCOES_URL, json={"job": JOB, "status": status, **campos})
     except httpx.RequestError as e:
         logger.warning("Não foi possível registrar a execução no Painel de Saúde: %s", e)

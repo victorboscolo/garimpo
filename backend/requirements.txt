@@ -7,6 +7,12 @@ pydantic==2.9.2
 pydantic-settings==2.5.2
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
+# passlib 1.7.4 detecta a versão do bcrypt lendo bcrypt.__about__.__version__,
+# atributo removido a partir do bcrypt 4.1 — sem pin, `pip install` traz o
+# bcrypt mais novo (5.0.0 achado em 18/09) e toda chamada de hash/verify
+# quebra com "password cannot be longer than 72 bytes" (a checagem de bug
+# interna do passlib falha, e o próprio erro dela mascara a causa real).
+bcrypt==4.0.1
 playwright==1.47.0
 apscheduler==3.10.4
 httpx==0.27.2

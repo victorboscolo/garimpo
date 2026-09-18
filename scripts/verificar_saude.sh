@@ -8,4 +8,8 @@
 # Roda via launchd (com.garimpo.verificar-saude.plist), em intervalo fixo
 # (StartInterval), não em horário de calendário — não importa a que hora do
 # dia roda, só que rode com regularidade.
-curl -s --max-time 30 -X POST http://127.0.0.1:8000/api/v1/saude/verificar-atrasados > /dev/null
+GARIMPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+COLETOR_API_KEY=$(grep -E '^COLETOR_API_KEY=' "$GARIMPO_ROOT/.env" 2>/dev/null | cut -d '=' -f2-)
+
+curl -s --max-time 30 -X POST -H "X-API-Key: $COLETOR_API_KEY" \
+  http://127.0.0.1:8000/api/v1/saude/verificar-atrasados > /dev/null

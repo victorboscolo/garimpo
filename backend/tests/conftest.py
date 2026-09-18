@@ -82,13 +82,20 @@ async def db():
 
 @pytest_asyncio.fixture
 async def client(db):
+    from api.dependencies import exigir_acesso
     from api.main import app
 
     app.dependency_overrides[get_db] = lambda: db
+    # Testes de integração cobrem o caminho request -> serviço -> banco, não
+    # a autenticação em si (essa tem os próprios testes, ver
+    # test_integracao_auth.py) — sem o override, todo teste existente
+    # precisaria simular login ou mandar a chave de API.
+    app.dependency_overrides[exigir_acesso] = lambda: None
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
     app.dependency_overrides.pop(get_db, None)
+    app.dependency_overrides.pop(exigir_acesso, None)
 
 
 @pytest_asyncio.fixture(autouse=True)

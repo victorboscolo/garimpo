@@ -52,6 +52,88 @@
     letter-spacing: -0.01em;
   }
 
+  .login-overlay {
+    position: fixed;
+    inset: 0;
+    background: var(--stone-50);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+
+  /* Sem isto, o `display: flex` acima empata em especificidade com a regra
+     `[hidden]` do navegador e vence por vir depois no CSS — o atributo
+     `hidden` setado via JS deixaria de esconder o overlay de verdade. */
+  .login-overlay[hidden] { display: none; }
+
+  .login-card {
+    background: white;
+    border: 1px solid var(--stone-200);
+    border-radius: 14px;
+    padding: 32px 30px;
+    width: 320px;
+  }
+
+  .login-card .brand { margin-bottom: 4px; }
+  .login-card .subtitle { margin-bottom: 22px; }
+
+  .login-card label {
+    display: block;
+    font-size: 12px;
+    color: var(--stone-700);
+    margin-bottom: 4px;
+    margin-top: 14px;
+  }
+
+  .login-card input {
+    width: 100%;
+    padding: 9px 10px;
+    border: 1px solid var(--stone-200);
+    border-radius: 8px;
+    font-size: 14px;
+    box-sizing: border-box;
+  }
+
+  .login-card button {
+    width: 100%;
+    margin-top: 20px;
+    padding: 10px;
+    border: none;
+    border-radius: 8px;
+    background: var(--stone-900);
+    color: var(--stone-50);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .login-erro {
+    color: var(--pouco);
+    font-size: 13px;
+    margin-top: 12px;
+    min-height: 16px;
+  }
+
+  .usuario-logado {
+    font-size: 12px;
+    color: var(--stone-700);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .usuario-logado[hidden] { display: none; }
+
+  .usuario-logado button {
+    background: none;
+    border: 1px solid var(--stone-200);
+    border-radius: 8px;
+    padding: 3px 9px;
+    font-size: 11px;
+    cursor: pointer;
+    color: var(--stone-700);
+  }
+
   .brand .accent { color: var(--excepcional); }
 
   .subtitle {
@@ -536,6 +618,21 @@
 </head>
 <body>
 
+<div class="login-overlay" id="login-overlay" hidden>
+  <div class="login-card">
+    <div class="brand">Garimpo <span class="accent">Promoções</span></div>
+    <div class="subtitle">Entrar no painel</div>
+    <form id="form-login" onsubmit="fazerLogin(event)">
+      <label for="login-email">E-mail</label>
+      <input type="email" id="login-email" required autocomplete="username">
+      <label for="login-senha">Senha</label>
+      <input type="password" id="login-senha" required autocomplete="current-password">
+      <button type="submit">Entrar</button>
+      <div class="login-erro" id="login-erro"></div>
+    </form>
+  </div>
+</div>
+
 <header>
   <div>
     <div class="brand">Garimpo <span class="accent">Promoções</span></div>
@@ -549,6 +646,10 @@
     <div class="tab" data-filtro="__PUBLICAR__">Publicar</div>
     <div class="tab" data-filtro="__SAUDE__">Saúde</div>
     <div class="tab" data-filtro="__EMISSOES__">Emissões</div>
+  </div>
+  <div class="usuario-logado" id="usuario-logado" hidden>
+    <span id="usuario-nome"></span>
+    <button onclick="sair()">Sair</button>
   </div>
 </header>
 
@@ -575,6 +676,72 @@
 </main>
 
 <script>
+// Login por usuário (18/09) — painel e API são a mesma origem, então a
+// sessão vive num cookie httponly; não precisa de token manipulado em JS.
+// `_fetchOriginal` é interceptado uma vez só, aqui, pra qualquer 401 de
+// qualquer chamada (as ~15 chamadas fetch já existentes no resto do
+// arquivo não precisam saber disso) mandar de volta pra tela de login,
+// inclusive se a sessão cair no meio do uso (expirou, ou foi de outra
+// aba).
+const _fetchOriginal = window.fetch;
+window.fetch = async function (...args) {
+  const resposta = await _fetchOriginal(...args);
+  const url = typeof args[0] === "string" ? args[0] : args[0]?.url || "";
+  if (resposta.status === 401 && url.startsWith("/api/v1/") && !url.includes("/auth/")) {
+    mostrarLogin();
+  }
+  return resposta;
+};
+
+function mostrarLogin() {
+  document.getElementById("login-overlay").hidden = false;
+  document.getElementById("usuario-logado").hidden = true;
+}
+
+function mostrarPainel(usuario) {
+  document.getElementById("login-overlay").hidden = true;
+  document.getElementById("usuario-logado").hidden = false;
+  document.getElementById("usuario-nome").textContent = usuario.nome;
+}
+
+async function fazerLogin(evento) {
+  evento.preventDefault();
+  const email = document.getElementById("login-email").value;
+  const senha = document.getElementById("login-senha").value;
+  const erroEl = document.getElementById("login-erro");
+  erroEl.textContent = "";
+
+  const resposta = await _fetchOriginal("/api/v1/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, senha }),
+  });
+
+  if (!resposta.ok) {
+    erroEl.textContent = "E-mail ou senha inválidos.";
+    return;
+  }
+
+  const usuario = await resposta.json();
+  mostrarPainel(usuario);
+  carregar();
+}
+
+async function sair() {
+  await fetch("/api/v1/auth/logout", { method: "POST" });
+  mostrarLogin();
+}
+
+async function iniciar() {
+  const resposta = await _fetchOriginal("/api/v1/auth/me");
+  if (resposta.ok) {
+    mostrarPainel(await resposta.json());
+    carregar();
+  } else {
+    mostrarLogin();
+  }
+}
+
 const API_BASE = "/api/v1/promocoes";
 let filtroAtual = "PENDENTE";
 
@@ -1449,7 +1616,7 @@ async function rejeitar(id) {
   carregar();
 }
 
-carregar();
+iniciar();
 </script>
 
 </body>

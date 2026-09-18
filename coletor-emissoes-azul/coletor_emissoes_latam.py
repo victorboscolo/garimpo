@@ -38,6 +38,7 @@ from datetime import date, timedelta
 import httpx
 from playwright.async_api import async_playwright
 
+from chave_api import HEADERS
 from parsing_latam import extrair_ofertas_latam_dom
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -137,7 +138,7 @@ async def main(limite: int) -> None:
         )
         return
 
-    async with httpx.AsyncClient(timeout=15.0) as client:
+    async with httpx.AsyncClient(timeout=15.0, headers=HEADERS) as client:
         rotas = await buscar_rotas(client, limite)
 
         if not rotas:

@@ -1,8 +1,9 @@
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import Response
 
-from api.v1 import classificacoes, emissoes, promocoes, publicacoes, saude
+from api.dependencies import exigir_acesso
+from api.v1 import auth, classificacoes, emissoes, promocoes, publicacoes, saude
 
 app = FastAPI(
     title="Garimpo Promoções — API",
@@ -10,11 +11,33 @@ app = FastAPI(
     description="Painel administrativo e API do Garimpo Promoções (MVP).",
 )
 
-app.include_router(promocoes.router, prefix="/api/v1/promocoes", tags=["promocoes"])
-app.include_router(classificacoes.router, prefix="/api/v1/promocoes", tags=["classificacoes"])
-app.include_router(publicacoes.router, prefix="/api/v1/publicacoes", tags=["publicacoes"])
-app.include_router(saude.router, prefix="/api/v1", tags=["saude"])
-app.include_router(emissoes.router, prefix="/api/v1/emissoes", tags=["emissoes"])
+# /auth é a única rota pública — login precisa ser alcançável sem sessão.
+# As demais exigem `exigir_acesso` (cookie de sessão do painel OU chave de
+# API dos coletores/scripts, ver api/dependencies.py): endpoints com os dois
+# tipos de chamador (ex: POST /promocoes/ingerir é só coletor, GET
+# /promocoes é painel e também scripts/recalibrar.sh) ficam cobertos pelo
+# mesmo dependency, sem precisar separar rota por rota.
+app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
+app.include_router(
+    promocoes.router, prefix="/api/v1/promocoes", tags=["promocoes"],
+    dependencies=[Depends(exigir_acesso)],
+)
+app.include_router(
+    classificacoes.router, prefix="/api/v1/promocoes", tags=["classificacoes"],
+    dependencies=[Depends(exigir_acesso)],
+)
+app.include_router(
+    publicacoes.router, prefix="/api/v1/publicacoes", tags=["publicacoes"],
+    dependencies=[Depends(exigir_acesso)],
+)
+app.include_router(
+    saude.router, prefix="/api/v1", tags=["saude"],
+    dependencies=[Depends(exigir_acesso)],
+)
+app.include_router(
+    emissoes.router, prefix="/api/v1/emissoes", tags=["emissoes"],
+    dependencies=[Depends(exigir_acesso)],
+)
 
 class PainelSemCache(StaticFiles):
     """Serve o painel sempre revalidando com o servidor.

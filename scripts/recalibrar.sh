@@ -16,24 +16,30 @@
 
 set -u
 
+# Chave fixa de coletores/scripts (18/09) — o painel agora exige
+# autenticação em toda rota, e um script não tem sessão de usuário.
+GARIMPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+COLETOR_API_KEY=$(grep -E '^COLETOR_API_KEY=' "$GARIMPO_ROOT/.env" 2>/dev/null | cut -d '=' -f2-)
+
 API="http://127.0.0.1:8000/api/v1"
 AGORA=$(date "+%Y-%m-%d %H:%M:%S")
 
 echo "===================================================================="
 echo "[$AGORA] Iniciando recalibração"
 
-if ! curl -sf -o /dev/null --max-time 10 "$API/promocoes?status=PENDENTE"; then
+if ! curl -sf -o /dev/null --max-time 10 -H "X-API-Key: $COLETOR_API_KEY" "$API/promocoes?status=PENDENTE"; then
   echo "[$AGORA] ERRO: a API não respondeu. O Docker está no ar?"
   echo "         Nada foi reprocessado — as classificações seguem as de antes."
   exit 1
 fi
 
 echo "Reprocessando..."
-RESULTADO=$(curl -sf --max-time 600 -X POST "$API/promocoes/reclassificar-todas")
+RESULTADO=$(curl -sf --max-time 600 -X POST -H "X-API-Key: $COLETOR_API_KEY" "$API/promocoes/reclassificar-todas")
 if [ $? -ne 0 ]; then
   echo "[$AGORA] ERRO: reclassificar-todas falhou."
   curl -s --max-time 10 -X POST "$API/execucoes" \
     -H "Content-Type: application/json" \
+    -H "X-API-Key: $COLETOR_API_KEY" \
     -d '{"job":"recalibracao","status":"FALHA","erro":"reclassificar-todas falhou ou expirou"}' > /dev/null
   exit 1
 fi
@@ -45,10 +51,11 @@ PROCESSADAS=$(echo "$RESULTADO" | grep -o '"processadas":[0-9]*' | grep -o '[0-9
 ERROS=$(echo "$RESULTADO" | grep -o '"erros":[0-9]*' | grep -o '[0-9]*')
 curl -s --max-time 10 -X POST "$API/execucoes" \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: $COLETOR_API_KEY" \
   -d "{\"job\":\"recalibracao\",\"status\":\"SUCESSO\",\"criadas\":${PROCESSADAS:-null},\"falhas\":${ERROS:-null}}" > /dev/null
 
 echo "Conferindo divergências com o que já foi publicado..."
-DIVERGENCIAS=$(curl -s --max-time 30 "$API/publicacoes/divergencias")
+DIVERGENCIAS=$(curl -s --max-time 30 -H "X-API-Key: $COLETOR_API_KEY" "$API/publicacoes/divergencias")
 echo "Divergências: $DIVERGENCIAS"
 
 case "$DIVERGENCIAS" in
