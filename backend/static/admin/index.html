@@ -203,6 +203,15 @@
 
   .card-main { min-width: 0; }
 
+  /* Card resumido de Destaques: o clique é no card inteiro, não num link
+     pequeno — precisa parecer clicável de propósito. */
+  .card-destaque {
+    cursor: pointer;
+    grid-template-columns: 1fr;
+    transition: border-color 0.15s;
+  }
+  .card-destaque:hover { border-color: var(--stone-700); }
+
   .card-top {
     display: flex;
     align-items: center;
@@ -829,12 +838,23 @@ async function carregar() {
   document.getElementById("label-selecao-tudo").textContent = `Selecionar todas (${pendentes})`;
   document.getElementById("selecionar-tudo").checked = false;
 
+  const destaques = filtroAtual === "__DESTAQUES__";
+
   for (const p of promocoes) {
     promocoesCache[p.id] = p;
-    const selecionavel = p.status === "PENDENTE";
+    const selecionavel = !destaques && p.status === "PENDENTE";
     const card = document.createElement("div");
-    card.className = selecionavel ? "card" : "card sem-selecao";
     card.id = `card-${p.id}`;
+
+    if (destaques) {
+      card.className = "card card-destaque";
+      card.onclick = () => alternarDetalhes(p.id);
+      card.innerHTML = renderCardDestaque(p);
+      lista.appendChild(card);
+      continue;
+    }
+
+    card.className = selecionavel ? "card" : "card sem-selecao";
     card.innerHTML = `
       ${selecionavel ? `
       <div class="card-sel">
@@ -1274,6 +1294,40 @@ function renderPontuacao(p) {
       <b>${esc(p.pontuacao)}</b> ${esc(formatUnidade(p.unidade_pontuacao))}${clube}${anterior}
     </div>
     ${aviso}`;
+}
+
+// Card resumido da aba Destaques (18/09, pedido do usuário): só o essencial
+// pra reconhecer a oferta de cara — parceiro, programa, cupom, pontuação e
+// nota. O resto (regulamento, justificativa, selos, link) mora atrás de um
+// clique no card inteiro, reaproveitando o mesmo `det-${id}`/`alternarDetalhes`
+// dos outros cards — é a mesma seção de detalhes, só que escondida por padrão
+// aqui e visível de cara nas outras abas.
+function renderCardDestaque(p) {
+  const c = p.classificacao_ativa;
+  const info = c ? (CATEGORIA_INFO[c.categoria] || { label: c.categoria, cor: "comum" }) : null;
+  const nota = info ? `
+    <div class="categoria-badge" style="background: var(--${info.cor}-bg); color: var(--${info.cor});">
+      ${info.label} · nota ${Number(c.nota).toFixed(0)}
+    </div>` : "";
+
+  return `
+    <div class="card-main">
+      <div class="card-top">
+        <span class="parceiro-nome">${esc(p.parceiro_nome)}</span>
+        <span class="programa-tag">${esc(p.programa_nome)}</span>
+        ${p.requer_cupom ? `<span class="tag-cupom" title="Sem aplicar este cupom no carrinho, o cliente não pontua.">🎫 Cupom${p.cupom ? " " + esc(p.cupom) : ""}</span>` : ""}
+      </div>
+      ${renderPontuacao(p)}
+      ${nota}
+      <div class="toggle-detalhes" id="btn-det-${p.id}">▸ Ver detalhes</div>
+      <div class="detalhes oculto" id="det-${p.id}" onclick="event.stopPropagation()">
+        ${renderRegulamento(p)}
+        ${c ? `<div class="justificativa">${esc(c.justificativa)}</div>` : ""}
+        ${renderSelos(p)}
+        ${renderDetalhes(p)}
+        <a class="link-origem" href="${esc(p.url_origem)}" target="_blank">Ver oferta original ↗</a>
+      </div>
+    </div>`;
 }
 
 function renderClassificacao(p) {
