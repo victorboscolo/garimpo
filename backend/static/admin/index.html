@@ -1285,7 +1285,7 @@ async function despachar(limite) {
   carregarFila();
 }
 
-function renderPontuacao(p) {
+function renderPontuacao(p, opcoes = {}) {
   // O número grande continua liderando — é a informação real da campanha e o
   // que dá apelo à publicação. O qualificador vem colado nele, nunca escondido:
   // a Beleza na Web anuncia "até 8" e paga 4 na maior parte da loja.
@@ -1298,7 +1298,11 @@ function renderPontuacao(p) {
     ? ` <span class="pontuacao-anterior">eram ${esc(p.pontuacao_anterior)}</span>`
     : "";
 
-  const aviso = p.valor_condicionado ? `
+  // No card resumido de Destaques (`comAviso: false`) só a tag basta — o
+  // texto completo já mora no `title` dela; a caixa inteira era grande
+  // demais pra uma vitrine pensada pra ser compacta.
+  const comAviso = opcoes.comAviso !== false;
+  const aviso = (p.valor_condicionado && comAviso) ? `
     <div class="aviso-condicionada">
       Este valor não vale para a compra inteira — costuma se aplicar só a
       certas categorias, marcas ou produtos. Veja o regulamento abaixo.
@@ -1333,7 +1337,7 @@ function renderCardDestaque(p) {
         <span class="programa-tag">${esc(p.programa_nome)}</span>
         ${p.requer_cupom ? `<span class="tag-cupom" title="Sem aplicar este cupom no carrinho, o cliente não pontua.">🎫 Cupom${p.cupom ? " " + esc(p.cupom) : ""}</span>` : ""}
       </div>
-      ${renderPontuacao(p)}
+      ${renderPontuacao(p, { comAviso: false })}
       ${nota}
       <div class="toggle-detalhes" id="btn-det-${p.id}">▸ Ver detalhes</div>
       <div class="detalhes oculto" id="det-${p.id}" onclick="event.stopPropagation()">
