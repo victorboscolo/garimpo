@@ -643,6 +643,7 @@
     <div class="tab" data-filtro="APROVADA">Aprovadas</div>
     <div class="tab" data-filtro="REJEITADA">Rejeitadas</div>
     <div class="tab" data-filtro="">Todas</div>
+    <div class="tab" data-filtro="__DESTAQUES__">Destaques</div>
     <div class="tab" data-filtro="__PUBLICAR__">Publicar</div>
     <div class="tab" data-filtro="__SAUDE__">Saúde</div>
     <div class="tab" data-filtro="__EMISSOES__">Emissões</div>
@@ -792,9 +793,11 @@ async function carregar() {
   selecionadas.clear();
   atualizarBarraLote();
 
-  const url = filtroAtual
-    ? `${API_BASE}?status=${filtroAtual}`
-    : `${API_BASE}`;
+  const url = filtroAtual === "__DESTAQUES__"
+    ? `${API_BASE}/destaques`
+    : filtroAtual
+      ? `${API_BASE}?status=${filtroAtual}`
+      : `${API_BASE}`;
 
   let promocoes;
   try {

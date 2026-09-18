@@ -72,6 +72,25 @@ async def listar_pendentes(db: AsyncSession = Depends(get_db)):
     return resultado.scalars().unique().all()
 
 
+@router.get("/destaques", response_model=list[PromocaoOut])
+async def listar_destaques(db: AsyncSession = Depends(get_db)):
+    """A vitrine de "melhor agora": aprovadas, vigentes (ver
+    `application/vigencia.py`) e nas duas categorias de topo do motor —
+    Excepcional e Excelente. Decisão do usuário (18/09): Boa/Comum/Pouco
+    atrativa não entram aqui, mesmo vigentes e aprovadas.
+    """
+    from application.vigencia import filtro_vigente
+
+    stmt = (
+        _stmt_listagem()
+        .filter(Promocao.status == "APROVADA")
+        .filter(filtro_vigente())
+        .filter(Classificacao.categoria.in_(["EXCEPCIONAL", "EXCELENTE"]))
+    )
+    resultado = await db.execute(stmt)
+    return resultado.scalars().unique().all()
+
+
 @router.get("/{promocao_id}", response_model=PromocaoOut)
 async def obter_promocao(promocao_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     promocao = await db.get(Promocao, promocao_id)

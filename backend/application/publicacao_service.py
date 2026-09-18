@@ -111,10 +111,7 @@ async def montar_fila(db, config: dict, tipo: str | None = None) -> list[dict]:
         logger.info("Canais fora da fila por falta de configuração: %s", ", ".join(ignorados))
     canais = [c for c in canais if cliente.esta_configurado(c)]
 
-    from datetime import datetime, timedelta, timezone
-    from sqlalchemy import or_
-
-    agora = datetime.now(timezone.utc)
+    from application.vigencia import filtro_vigente
 
     stmt = (
         select(Promocao, Classificacao)
@@ -124,19 +121,10 @@ async def montar_fila(db, config: dict, tipo: str | None = None) -> list[dict]:
             Classificacao.ativa.is_(True),
         ))
         .filter(Promocao.status == "APROVADA")
-        # Campanha encerrada sai da fila. Sem data de fim a oferta permanece:
-        # são as taxas estáveis do parceiro (`BAU` na Livelo), que não expiram —
-        # descartá-las por falta de data eliminaria metade das boas ofertas.
-        #
-        # `data_fim` guarda a meia-noite do último dia válido (extraído como
-        # `date`, não `datetime` — "Campanha válida em 09/09/2026" vira
-        # 09/09 00:00), não o fim daquele dia. Comparar direto com `agora`
-        # tirava a campanha da fila a partir da própria meia-noite do dia
-        # em que ela ainda vale — achado do usuário, 09/09: aprovou o
-        # Carrefour (campanha de um dia só, hoje) e ele não aparecia na
-        # fila porque já passava das 00h. Soma um dia antes de comparar,
-        # pra valer até o fim do último dia, não só o início dele.
-        .filter(or_(Promocao.data_fim.is_(None), Promocao.data_fim + timedelta(days=1) > agora))
+        # Campanha encerrada sai da fila — ver `filtro_vigente` pro porquê
+        # de comparar com `data_fim + 1 dia`, não `data_fim` direto (achado
+        # do usuário, 09/09).
+        .filter(filtro_vigente())
         .order_by(Classificacao.nota.desc())
     )
     aprovadas = (await db.execute(stmt)).unique().all()
