@@ -203,14 +203,29 @@
 
   .card-main { min-width: 0; }
 
+  /* Destaques em grade — 2 ou 3 colunas, o que couber na largura (18/09,
+     pedido do usuário), em vez da lista de uma coluna só das outras abas. */
+  .lista-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 12px;
+  }
+  .lista-grid .empty-state { grid-column: 1 / -1; }
+
   /* Card resumido de Destaques: o clique é no card inteiro, não num link
-     pequeno — precisa parecer clicável de propósito. */
+     pequeno — precisa parecer clicável de propósito. Mais compacto que o
+     card cheio das outras abas, pra caber vários por linha. */
   .card-destaque {
     cursor: pointer;
     grid-template-columns: 1fr;
+    padding: 14px 16px;
+    margin-bottom: 0;
     transition: border-color 0.15s;
   }
   .card-destaque:hover { border-color: var(--stone-700); }
+  .card-destaque .parceiro-nome { font-size: 15px; }
+  .card-destaque .pontuacao { margin-bottom: 6px; font-size: 13px; }
+  .card-destaque .categoria-badge { margin-bottom: 4px; }
 
   .card-top {
     display: flex;
@@ -648,11 +663,11 @@
     <div class="subtitle">Painel de revisão do Motor de Análise V1</div>
   </div>
   <div class="tabs">
-    <div class="tab active" data-filtro="PENDENTE">Pendentes</div>
+    <div class="tab active" data-filtro="__DESTAQUES__">Destaques</div>
+    <div class="tab" data-filtro="PENDENTE">Pendentes</div>
     <div class="tab" data-filtro="APROVADA">Aprovadas</div>
     <div class="tab" data-filtro="REJEITADA">Rejeitadas</div>
     <div class="tab" data-filtro="">Todas</div>
-    <div class="tab" data-filtro="__DESTAQUES__">Destaques</div>
     <div class="tab" data-filtro="__PUBLICAR__">Publicar</div>
     <div class="tab" data-filtro="__SAUDE__">Saúde</div>
     <div class="tab" data-filtro="__EMISSOES__">Emissões</div>
@@ -753,7 +768,7 @@ async function iniciar() {
 }
 
 const API_BASE = "/api/v1/promocoes";
-let filtroAtual = "PENDENTE";
+let filtroAtual = "__DESTAQUES__";
 
 const CATEGORIA_INFO = {
   EXCEPCIONAL:     { label: "🔥 Excepcional",     cor: "excepcional" },
@@ -798,6 +813,7 @@ async function carregar() {
   const lista = document.getElementById("lista");
   const contador = document.getElementById("contador");
   lista.innerHTML = "";
+  lista.classList.toggle("lista-grid", filtroAtual === "__DESTAQUES__");
   contador.textContent = "Carregando…";
   selecionadas.clear();
   atualizarBarraLote();
