@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.garimpo.coletor-azul</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/victor/Garimpo/garimpo-promocoes-v2/coletor-emissoes-azul/rodar_coletor_azul.sh</string>
+    </array>
+
+    <!-- 10:25 — depois de Livelo (10:05) e Esfera (10:20), antes do backup
+         (10:40), pra não disputar recursos no mesmo minuto que os outros
+         coletores com navegador. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>10</integer>
+        <key>Minute</key>
+        <integer>25</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/victor/Garimpo/garimpo-promocoes-v2/coletor-emissoes-azul/coletor-azul.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/victor/Garimpo/garimpo-promocoes-v2/coletor-emissoes-azul/coletor-azul-erro.log</string>
+</dict>
+</plist>

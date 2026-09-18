@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.garimpo.coletor-latam</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/victor/Garimpo/garimpo-promocoes-v2/coletor-emissoes-azul/rodar_coletor_latam.sh</string>
+    </array>
+
+    <!-- 10:35 — 5 min depois do Smiles, ainda antes do backup (10:40).
+         Depende de sessão logada manualmente (perfil-latam-dedicado/); se
+         expirar, a execução falha e o Painel de Saúde acusa — ver o
+         cabeçalho de rodar_coletor_latam.sh. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>10</integer>
+        <key>Minute</key>
+        <integer>35</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/victor/Garimpo/garimpo-promocoes-v2/coletor-emissoes-azul/coletor-latam.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/victor/Garimpo/garimpo-promocoes-v2/coletor-emissoes-azul/coletor-latam-erro.log</string>
+</dict>
+</plist>
