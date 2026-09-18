@@ -1,9 +1,13 @@
 # Handoff para Claude Code
 
-> Revisado em 21/08/2026, ao fim de uma sessão de cinco dias. Os números aqui
-> foram conferidos contra o banco na escrita, não reconstruídos de memória. A
-> seção 12 lista as afirmações de handoffs anteriores que se provaram falsas —
-> vale ler antes de confiar em qualquer documento mais antigo.
+> Revisado em 18/09/2026. A seção 14 é a mais recente e cobre a virada real do
+> Garimpo Emissões: Azul e Smiles passaram a coletar de verdade (bypass de
+> Akamai via SeleniumBase `uc=True`), e a LATAM entrou como terceiro programa,
+> com sessão logada manualmente. Números das seções 1-3 continuam de 09/09 ou
+> antes e não foram reconferidos contra o banco nesta sessão — o foco foi
+> Emissões, não uma auditoria de Promoções. A seção 12 lista as afirmações de
+> handoffs anteriores que se provaram falsas — vale ler antes de confiar em
+> qualquer documento mais antigo.
 
 ## 1. Resumo executivo
 
@@ -158,7 +162,7 @@ interpretar preço real dos dois sistemas de busca da Azul.
 | Painel de Saúde | IMPLEMENTADO | tabela `execucoes` + `GET /api/v1/saude`; coletor Livelo, coletor Esfera, recalibração e backup registram o próprio resultado ao terminar (sucesso/falha, contadores, erro); situação OK/FALHA/ATRASADA/NUNCA_RODOU por job; **aviso ativo no Telegram (19/08)**: FALHA dispara na hora, ATRASADA é checado a cada 6h (`scripts/verificar_saude.sh`) |
 | Backup | IMPLEMENTADO (18/08, corrigido 19/08) | diário via launchd (10:40), Postgres → Google Drive (camada de HD externo é opcional, só grava se já estiver montado); retenção de 30 backups na nuvem; sem criptografia (decisão, ver seção 5). Falhou na primeira execução agendada de verdade (`docker: command not found` — PATH do launchd não inclui `/usr/local/bin`); o próprio Painel de Saúde pegou, corrigido no mesmo dia |
 | Testes automatizados | PARCIAL | 108 backend (84 de lógica pura + 23 de integração API/banco + 1 smoke test de `alembic upgrade head`) + 43 coletor Livelo + 9 coletor Esfera. Cobre os fluxos onde já apareceu bug real; não é cobertura exaustiva |
-| Garimpo Emissões | EM CONSTRUÇÃO (21/08) | Schema por perna (`rotas_emissao`, `ofertas_emissao` com `paradas`/`assentos_restantes`, migration 0011) e endpoints prontos, sem motor. Coletor: URL + parser só-ida prontos pros dois sistemas da Azul (22 testes, contra dado real). Catálogo de rotas populado (107 linhas). Orquestração Playwright escrita (`coletor_emissoes_azul.py`) mas bloqueada por rate-limit no fim do dia 21/08, ainda não rodou com sucesso de ponta a ponta — retomar amanhã. Nenhuma oferta real coletada ainda. Ver seção 5 |
+| Garimpo Emissões | FUNCIONANDO DE PONTA A PONTA (17-18/09) | Três coletores reais rodando: **Azul** (`azulpelomundo`, via SeleniumBase `uc=True` — bypass real do Akamai), **Smiles** (idem, SeleniumBase), **LATAM** (Playwright, sessão logada manualmente pelo usuário — LATAM nunca teve Akamai, só exige login). Modelo simplificado: sem `taxa_reais` (campo mantido no schema, não populado), `duracao_texto` novo (String livre, tal qual o site mostra), até 2 ofertas por busca (direto + com parada). Aba "Emissões" no painel, programa-agnóstica, layout de comparativo lado a lado com nome de companhia por extenso. Sem motor/nota automática ainda (decisão de produto em aberto). Ver seção 14 pro detalhe completo — **substitui a seção 5/9 antigas sobre Emissões, que ficaram obsoletas** |
 | Publicação (Telegram) | IMPLEMENTADO | fila com curadoria, prévia, envio em lote, descarte, diagnóstico e aviso de divergência; mensagem por tópicos, com nome do programa |
 | Autenticação | PENDENTE | ver seção 8 |
 
@@ -1433,3 +1437,246 @@ IP se resolva — só serve para o usuário mesmo dirigir e a IA observar.
   calibragem + Emissões, não uma auditoria de números.
 - Nada da investigação de Emissões de hoje foi commitada — só existe neste
   handoff e em scripts de rascunho fora do controle de versão.
+
+## 14. Sessão de 17-18/09 — Emissões sai do papel: Azul e Smiles coletando de verdade, LATAM entra como terceiro programa
+
+A sessão de 09/09 (seção 13) parou bloqueada em rate-limit/Akamai nos dois
+sistemas da Azul e num spinner intermitente na Smiles, sem solução. Esta
+sessão resolveu as duas coisas e foi além: os três programas (Azul, Smiles,
+LATAM) hoje coletam de ponta a ponta contra dado real, gravam no banco e
+aparecem automaticamente numa aba nova do painel. **Tudo commitado** (5
+commits: `e5effcd`, `1511012`, `8b6602e`, `e41e2b5`/`791002c`, `8801650`).
+
+### O achado que destravou tudo: SeleniumBase `uc=True`
+
+O bloqueio de Akamai que persistia desde 21/08 (site principal da Azul e
+`azulpelomundo`) e o spinner intermitente da Smiles (09/09) tinham a mesma
+causa raiz: fingerprint de automação. **Playwright, mesmo com todos os
+truques testados** (`--disable-blink-features=AutomationControlled`, Chrome
+real via `channel="chrome"`, perfil persistente "amadurecido" com uso
+manual, patches de stealth) **nunca passou** — Azul devolvia "Ops! Só um
+momento" e Smiles ficava presa num spinner infinito.
+
+**SeleniumBase em modo `uc=True`** (`Driver(uc=True, headless=False)`)
+resolveu os dois de primeira. A biblioteca patcha o binário do Chrome em
+tempo de execução pra remover os hooks de automação que o Akamai Bot
+Manager detecta — não é um "modo turbo" do Playwright, é uma técnica
+diferente e mais profunda de mascarar automação. Acabou sendo a mesma
+lição repetida duas vezes na sessão (Azul e depois Smiles): quando o
+bloqueio é Akamai de verdade, truques incrementais em cima do Playwright
+não resolvem, é preciso a ferramenta certa.
+
+**Ressalva importante, achada com a LATAM (ver abaixo)**: SeleniumBase só
+deve ser usado quando existe de fato um desafio anti-robô pra vencer. A
+LATAM nunca teve isso — sua barreira é só login — e usar SeleniumBase lá
+foi tentativa errada (não lê sessão gravada por Playwright). A escolha da
+ferramenta depende do tipo de barreira, não é "SeleniumBase sempre que
+houver navegador".
+
+### Azul: só `azulpelomundo` funciona; site principal continua bloqueado, mas numa camada diferente
+
+`coletor_emissoes_azul.py` foi reescrito de Playwright pra SeleniumBase
+(síncrono — a biblioteca não é compatível com asyncio, então o coletor
+inteiro deixou de usar `httpx.AsyncClient` e voltou a `httpx.Client`).
+Só busca `AZUL_PELO_MUNDO`; `SITE_PRINCIPAL` foi propositalmente deixado de
+lado.
+
+**Achado novo sobre o site principal**: a home page passa pelo desafio do
+SeleniumBase sem problema, mas a API de busca de verdade
+(`b2c-api.voeazul.com.br/.../v6/availability`) continua devolvendo 403.
+É uma **segunda camada de proteção**, na própria API, independente da
+proteção da página — o SeleniumBase resolve a primeira (a página carrega),
+não a segunda (a API de busca ainda bloqueia). Essa fonte permanece
+inviável; os 77 destinos de malha própria da Azul (Nordeste, Sul, MG,
+tráfego doméstico) continuam fora do alcance.
+
+**Achado novo sobre o `azulpelomundo`**: mesmo com a sessão passando pelo
+Akamai, `GET /api/availability` exige um token de reCAPTCHA gerado pelo
+próprio JS da página a cada chamada — refazer a chamada de fora (mesmo
+reaproveitando os cookies válidos da sessão) devolve
+`400 {"reason":"MISSING_TOKEN"}`. Solução: abandonar o refetch de JSON e
+**ler o DOM já renderizado** (`.componentFlight`, via
+`driver.execute_script`) — o mesmo princípio já usado para o site
+principal da Azul e para a Livelo: quando a rede não é interceptável, o
+dado mora estável no HTML.
+
+### Smiles: primeiro coletor de verdade, com um driver novo por rota
+
+`coletor_emissoes_smiles.py` (novo). Três achados reais no processo:
+
+1. **`cabin=ECONOMIC` na URL, não `ECONOMY`** — usar a palavra errada
+   (a mesma usada internamente pro campo `classe` do banco) devolvia a
+   busca pra home silenciosamente, sem erro. Corrigido com uma constante
+   separada só pra URL (`_CABIN_NA_URL`), mantendo `CLASSE = "ECONOMY"`
+   pro payload do banco.
+2. **O texto do spinner não é sinal confiável de "terminou"** — o texto
+   desaparecia brevemente no meio da busca antes do resultado de verdade
+   renderizar, gerando falso "sem oferta". Corrigido esperando a presença
+   real dos cartões (`.select-flight-list-accordion-item`) em vez da
+   ausência do spinner, com retentativas.
+3. **A segunda busca na mesma sessão do navegador trava, de forma
+   confiável** — mesmo com bastante retentativa, a segunda rota (e
+   seguintes) dentro do mesmo `Driver()` sempre falhava, enquanto a mesma
+   busca isolada funcionava. Corrigido abrindo **um `Driver()` novo por
+   rota** (diferente da Azul, que reaproveita um único driver com
+   sucesso). `driver.refresh()` foi tentado como retentativa e descartado:
+   deixa a página em branco permanentemente (o app da Smiles é uma SPA que
+   não re-hidrata num reload de verdade); a correção usa `driver.get(url)`
+   de novo, nunca `refresh()`.
+
+### LATAM: terceiro programa, único com Playwright, sessão logada manualmente
+
+Pedido explícito do usuário: "quero que faça a mesma extração para a
+Latam." **A LATAM nunca teve bloqueio Akamai** — reconfirmado nesta
+sessão, achado que já estava certo desde 19/08 (seção 5/13 antigas): a
+busca com milhas simplesmente não carrega resultado sem sessão logada. É
+um tipo de barreira estruturalmente diferente da Azul/Smiles (acesso, não
+anti-robô), e a premissa do projeto de nunca contornar autenticação
+(seção 2) segue valendo à risca — **o login é sempre feito manualmente
+pelo usuário, nunca pela IA, mesmo que ele ofereça a credencial**.
+
+**Fluxo usado**: perfil de Chrome dedicado e persistente
+(`coletor-emissoes-azul/perfil-latam-dedicado/`, gitignorado), aberto numa
+janela visível pro usuário logar com a própria conta. Duas rodadas de
+login foram necessárias — a primeira ("Pronto") acabou incompleta (o
+usuário confirmou a janela abrir, não o login em si); confirmado que a
+segunda funcionou de verdade pelo nome "Victor" aparecendo no cabeçalho da
+página, com resultado real na tela.
+
+**Dois achados técnicos reais**, documentados também no cabeçalho de
+`coletor_emissoes_latam.py`:
+
+1. **SeleniumBase não lê uma sessão gravada por Playwright, mesmo no mesmo
+   diretório de perfil.** Primeira tentativa do coletor usou SeleniumBase
+   (padrão dos outros dois), abrindo `perfil-latam-dedicado` com
+   `Driver(uc=True, user_data_dir=PERFIL)` — mostrou "Fazer login" mesmo
+   logo depois de um login manual bem-sucedido feito via Playwright no
+   mesmo diretório. As duas ferramentas gravam o subdiretório interno do
+   perfil de forma incompatível entre si (já era suspeita de uma
+   investigação cruzada anterior nesta mesma sessão, com um perfil da
+   Smiles testado contra a Azul). Corrigido reescrevendo o coletor pra usar
+   **Playwright**, a mesma ferramenta que fez o login — e, como a LATAM não
+   tem desafio Akamai, não há motivo pra precisar do SeleniumBase ali.
+2. **Falso positivo na detecção de "não está logado"**: a primeira
+   verificação usava `if "Fazer login" in html`, e essa string aparece em
+   algum canto da página **mesmo com a sessão ativa e resultados reais na
+   tela** — confirmado isolando um teste que mostrou as duas condições
+   simultâneas (`"Fazer login" in html == True` e `"milhas</span>" in
+   html == True`), com captura de tela provando o resultado real visível.
+   Corrigido trocando pra um sinal mais específico: o texto da tela de
+   login de verdade (`"Insira seu usuário"`) **e** a ausência de qualquer
+   cartão de resultado (`"card-expander-0" not in html`) — só as duas
+   juntas indicam sessão realmente caída.
+
+**Busca por URL direta, sem preencher formulário**: assim como Azul e
+Smiles, a LATAM também aceita navegar direto pra uma URL de resultado
+(`redemption=true&trip=OW&sort=RECOMMENDED`, com `origin`/`destination`/
+`outbound` na querystring) em vez de interagir com o formulário — descoberto
+depois de várias tentativas frustradas de clicar em elementos da tela
+(checkbox "Usar milhas + dinheiro", calendário, botão "Procurar voos") via
+seletores de papel/texto do Playwright, que davam erro de "múltiplos
+elementos" ou "elemento invisível" por causa de inputs estilizados
+customizados. Cliques por coordenada de pixel (lidos de screenshot)
+chegaram a funcionar como investigação manual, mas foram abandonados a
+favor da URL direta, que é mais robusta e já é o padrão dos outros dois
+coletores.
+
+Parser (`parsing_latam.py`) separa os cartões de resultado pelo atributo
+`data-testid="card-expander-N"` (confirmado que aparecem na ordem real dos
+cartões). Nome da companhia já vem por extenso no próprio HTML
+(`data-testid="image-<Nome>"`), sem precisar de dicionário de conversão
+como a Azul.
+
+**Achado de produto, ainda não capturado (correção do usuário, 18/09)**:
+ao lado da oferta em milhas, a LATAM mostra "+ BRL X,XX ... Inclui taxas e
+impostos". Isso **é uma taxa de embarque real, cobrada em cima da mesma
+oferta em milhas** — diferente do que se observou em Azul e Smiles, onde
+o valor equivalente em reais vinha de uma **opção de compra alternativa**
+(Azul: combo milhas+dinheiro com menos pontos; Smiles: 100% em dinheiro),
+não um acréscimo sobre a oferta em pontos anunciada. É por isso que
+`taxa_reais` foi descontinuado nos três coletores (não populado, campo
+mantido no schema) — mas no caso específico da LATAM, essa correção do
+usuário confirma que existe sim um dado de taxa genuíno e bem definido pra
+capturar no futuro, só ainda não foi feito ("não mexamos na taxa por
+agora" continua valendo, ver Pendências).
+
+### Modelo de dados simplificado, com base em revisão de dado real
+
+O usuário revisou dado real coletado e deu três decisões que mudaram o
+modelo nos três coletores (migration 0013):
+
+1. **`taxa_reais` descontinuado** — motivo explicado acima; campo
+   permanece no schema (não removido), só não é mais populado por nenhum
+   dos três coletores. Se um dia existir uma taxa de embarque real e
+   separada (caso da LATAM), ela teria que ser modelada como campo
+   próprio, não reaproveitando este.
+2. **`duracao_texto` (novo, String(20))** — duração gravada exatamente como
+   o site mostra ("11h25", "02h50min", "8 h 30 min."), sem converter pra
+   minutos. Decisão deliberada: não inventar precisão que a fonte não
+   garante.
+3. **Até duas ofertas por busca**: `paradas` já existia no schema (desde a
+   migration 0011) — cada busca agora pode gravar uma oferta com
+   `paradas == 0` (mais barata direta) **e** uma com `paradas >= 1` (mais
+   barata com parada), em vez de só "a mais barata geral". Implementado
+   idêntico nos três parsers, todos retornando
+   `{"direto": dict | None, "com_parada": dict | None}`.
+
+### Painel: aba "Emissões", programa-agnóstica
+
+Nova aba no painel (`data-filtro="__EMISSOES__"`, mesmo padrão da aba
+Saúde), lendo de um endpoint novo de leitura,
+`GET /api/v1/emissoes/ofertas` — devolve "a foto de agora": a oferta mais
+recente por par (rota, categoria), não o histórico completo. Renderiza um
+card por rota, com duas colunas lado a lado (Direto | Com parada) — layout
+de comparativo de preço, pedido explícito do usuário depois de ver a
+primeira versão em lista simples.
+
+Um dicionário `NOME_COMPANHIA` no JS do painel converte código IATA pra
+nome completo (AF→Air France, BA→British Airways etc., com fallback pro
+código bruto se desconhecido) — só necessário pra Azul, cujo DOM só expõe
+o código; Smiles e LATAM já devolvem o nome completo na própria fonte.
+
+**Achado de reuso real**: quando a LATAM entrou em produção, apareceu
+automaticamente na aba Emissões **sem nenhuma mudança de código no
+painel** — só foi preciso corrigir um bug de rótulo pré-existente (a
+lógica de unidade dizia "pontos" pra tudo que não fosse Smiles, incluindo
+a LATAM por engano; corrigido pra `programa_nome === "Azul" ? "pontos" :
+"milhas"`). Confirma que o desenho do painel é de fato agnóstico a
+programa, como pretendido.
+
+### Seeds e testes
+
+`scripts_backfill/seed_smiles.py` e `seed_latam.py` (novos, mesmo padrão
+do de Azul): criam o `Programa` sob o `Dominio` "EMISSOES" já existente e
+populam um catálogo inicial pequeno de propósito (2 rotas cada) —
+Smiles: GIG→REC, GIG→MCO; LATAM: GRU→MIA, GIG→SCL. Idempotentes,
+dry-run por padrão. Rodados de verdade via
+`docker compose exec backend python -m scripts_backfill.seed_X --aplicar`.
+
+Suítes ao fim da sessão: 144 testes de backend, 41 no `coletor-emissoes-azul`
+(inclui Azul, Smiles e LATAM) — todos passando.
+
+### Pendências explicitamente deixadas em aberto pelo usuário (18/09)
+
+- **Não ampliar o catálogo de rotas por ora** — "por enquanto deixemos
+  assim, precisamos melhorar a forma de mostrar os dados" (18/09). Vale
+  pros três programas; catálogos continuam pequenos de propósito.
+- **Não agendar os coletores por ora**, pelo mesmo motivo acima — sem
+  `launchd` pra Emissões ainda, ao contrário de Livelo/Esfera.
+- **Taxa de embarque real da LATAM não capturada ainda** — o usuário
+  confirmou (18/09) que o valor "Inclui taxas e impostos" é uma taxa
+  genuína sobre a mesma oferta em milhas, mas instruiu explicitamente a
+  não tocar nisso agora ("não mexamos na taxa por agora", instrução
+  original de sessão anterior, reafirmada). Não avançar sem pedido novo.
+- **`SITE_PRINCIPAL` da Azul (77 rotas de malha própria) continua
+  bloqueado**, agora numa camada diferente (API de busca, não mais a
+  página) — nenhuma investigação nova foi pedida ou feita sobre isso.
+- **Sessão da LATAM pode expirar** e vai exigir novo login manual do
+  usuário no `perfil-latam-dedicado` quando isso acontecer — já aconteceu
+  uma vez nesta própria sessão. O coletor detecta e falha com mensagem
+  clara nesse caso, não silenciosamente.
+- Próximo foco pedido pelo usuário (18/09), ainda não iniciado: (1)
+  investigar o esforço de hospedar os dados fora da máquina local, com
+  soluções gratuitas; (2) desenhar um painel-resumo, novo, com as
+  melhores ofertas de pontos e emissões juntas, mantendo os menus
+  existentes.
