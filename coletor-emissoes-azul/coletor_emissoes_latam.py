@@ -25,6 +25,32 @@ Navega direto pra URL de resultado (`redemption=true` é o parâmetro que
 ativa a busca por milhas), sem preencher formulário — testado 2x contra
 rotas reais (GRU->MIA, GIG->SCL), sessão autenticada uma vez só.
 
+## ⚠️ Suspeita real, não resolvida (21/09): navegação direta pode
+## subestimar disponibilidade
+
+Achado do usuário: buscando SCL->GRU pelo formulário de verdade do site
+(digitando origem/destino, selecionando data, clicando "Procurar voos"),
+ele encontrou oferta em milhas (33.130, direto) numa data em que a
+navegação direta por URL deste coletor (mesma rota, mesma data, mesmo
+perfil logado) devolvia "sem oferta" de forma consistente — confirmado
+em buscas repetidas, inclusive ao vivo, sem mudança.
+
+Investigação em 21/09: reproduzir o fluxo do formulário via automação
+(preencher campos, clicar o botão de verdade — não navegação direta)
+**deu timeout 3 de 3 vezes**, com a própria LATAM admitindo o problema
+("A busca está demorando mais que o normal", página de erro
+`/oferta-voos/erro/tempo-resultados-busca/`). Ou seja: passar pelo
+formulário parece acionar uma busca "ao vivo" mais lenta e mais completa
+no backend deles — é provavelmente isso que revela disponibilidade que a
+navegação direta (rápida, ~10-12s, usada por este coletor) não enxerga.
+Mas essa busca "ao vivo" não é confiável pra automação hoje (timeout
+nas 3 tentativas).
+
+**Conclusão prática, ainda em aberto**: os dados que este coletor traz
+podem estar subestimando disponibilidade real da LATAM de forma
+sistemática, não só num caso isolado. Não foi resolvido nesta sessão —
+fica registrado pra retomar, não é hipótese descartada.
+
 Uso manual: ./venv/bin/python3 coletor_emissoes_latam.py [--limite N]
 """
 from __future__ import annotations
