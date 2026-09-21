@@ -24,6 +24,10 @@ from infrastructure.db.session import AsyncSessionLocal
 CATALOGO_INICIAL = [
     ("GRU", "MIA", "LATAM"),
     ("GIG", "SCL", "LATAM"),
+    # Pedido do usuário (21/09): busca pontual pra segunda quinzena de
+    # julho/2027, ver coletor-emissoes-azul/buscar_latam_intervalo.py.
+    ("GRU", "SCL", "LATAM"),
+    ("SCL", "GRU", "LATAM"),
 ]
 
 

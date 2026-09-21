@@ -26,7 +26,7 @@ from datetime import date, timedelta
 import httpx
 from seleniumbase import Driver
 
-from chave_api import API_BASE_URL, HEADERS, aquecer
+from chave_api import API_BASE_URL, HEADERS, aquecer, reportar_execucao
 from parsing_smiles import extrair_ofertas_smiles_dom
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -144,6 +144,9 @@ def enviar_oferta(client: httpx.Client, rota: dict, data_ida: date, oferta: dict
     return False
 
 
+JOB = "coletor_smiles"
+
+
 def main(limite: int) -> None:
     aquecer()
     with httpx.Client(timeout=15.0, headers=HEADERS) as client:
@@ -151,6 +154,7 @@ def main(limite: int) -> None:
 
         if not rotas:
             logger.error("Nenhuma rota Smiles encontrada em rotas_emissao — rode o seed_smiles antes.")
+            reportar_execucao(JOB, "FALHA", erro="Nenhuma rota Smiles cadastrada")
             return
 
         logger.info("Rodando %d rota(s): %s", len(rotas), [f"{r['origem']}->{r['destino']}" for r in rotas])
@@ -192,6 +196,7 @@ def main(limite: int) -> None:
                 driver.quit()
 
         logger.info("Concluído: %d gravadas, %d sem oferta, %d falhas.", gravadas, sem_oferta, falhas)
+        reportar_execucao(JOB, "SUCESSO", criadas=gravadas, descartadas=sem_oferta, falhas=falhas)
 
 
 if __name__ == "__main__":

@@ -38,7 +38,7 @@ from datetime import date, timedelta
 import httpx
 from playwright.async_api import async_playwright
 
-from chave_api import API_BASE_URL, HEADERS, aquecer
+from chave_api import API_BASE_URL, HEADERS, aquecer, reportar_execucao
 from parsing_latam import extrair_ofertas_latam_dom
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -66,11 +66,17 @@ def _url_busca(origem: str, destino: str, data_ida: date) -> str:
     )
 
 
-async def buscar_latam(page, origem: str, destino: str) -> tuple[dict, date]:
+async def buscar_latam(page, origem: str, destino: str, data_ida: date | None = None) -> tuple[dict, date]:
     """Devolve (`{"direto": oferta | None, "com_parada": oferta | None}`,
     data efetivamente buscada).
+
+    Sem `data_ida`, usa o padrão do coletor agendado (hoje + `DIAS_A_FRENTE`).
+    Passar uma data explícita é o que `buscar_latam_intervalo.py` usa pra
+    pesquisas pontuais fora da cadência diária (ex: pedido do usuário,
+    21/09, segunda quinzena de julho/2027).
     """
-    data_ida = date.today() + timedelta(days=DIAS_A_FRENTE)
+    if data_ida is None:
+        data_ida = date.today() + timedelta(days=DIAS_A_FRENTE)
     url = _url_busca(origem, destino, data_ida)
     logger.info("LATAM: buscando %s -> %s (%s)", origem, destino, data_ida)
     await page.goto(url, wait_until="domcontentloaded")
@@ -130,6 +136,9 @@ async def enviar_oferta(client: httpx.AsyncClient, rota: dict, data_ida: date, o
     return False
 
 
+JOB = "coletor_latam"
+
+
 async def main(limite: int) -> None:
     aquecer()
     if not os.path.isdir(PERFIL_LATAM):
@@ -137,6 +146,7 @@ async def main(limite: int) -> None:
             "Perfil %s não existe — o usuário precisa logar manualmente na LATAM "
             "nesse perfil antes de rodar o coletor.", PERFIL_LATAM,
         )
+        reportar_execucao(JOB, "FALHA", erro="Perfil da LATAM não existe — precisa de login manual")
         return
 
     async with httpx.AsyncClient(timeout=15.0, headers=HEADERS) as client:
@@ -144,6 +154,7 @@ async def main(limite: int) -> None:
 
         if not rotas:
             logger.error("Nenhuma rota LATAM encontrada em rotas_emissao — rode o seed antes.")
+            reportar_execucao(JOB, "FALHA", erro="Nenhuma rota LATAM cadastrada")
             return
 
         logger.info("Rodando %d rota(s): %s", len(rotas), [f"{r['origem']}->{r['destino']}" for r in rotas])
@@ -182,6 +193,7 @@ async def main(limite: int) -> None:
             await context.close()
 
         logger.info("Concluído: %d gravadas, %d sem oferta, %d falhas.", gravadas, sem_oferta, falhas)
+        reportar_execucao(JOB, "SUCESSO", criadas=gravadas, descartadas=sem_oferta, falhas=falhas)
 
 
 if __name__ == "__main__":

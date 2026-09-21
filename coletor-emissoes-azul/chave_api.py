@@ -58,3 +58,20 @@ def aquecer(tentativas: int = 3, espera_segundos: float = 20.0) -> None:
             except httpx.RequestError as e:
                 logger.info("Aquecendo o backend (tentativa %d/%d): %s", tentativa, tentativas, e)
     logger.warning("Backend não respondeu ao aquecimento — seguindo mesmo assim.")
+
+
+def reportar_execucao(job: str, status: str, **campos) -> None:
+    """Registra o resultado desta execução pro Painel de Saúde — igual ao
+    que os coletores de Promoções (Livelo/Esfera) já fazem. Sem isso, uma
+    falha agendada de Azul/Smiles/LATAM nunca aparece pra quem não estiver
+    olhando o log local na hora.
+
+    Nunca deve derrubar a coleta: se a própria API estiver fora do ar, é
+    exatamente o cenário que o painel deveria estar avisando, então uma
+    falha aqui só é logada, não propagada.
+    """
+    try:
+        with httpx.Client(timeout=10.0, headers=HEADERS) as client:
+            client.post(f"{API_BASE_URL}/api/v1/execucoes", json={"job": job, "status": status, **campos})
+    except httpx.RequestError as e:
+        logger.warning("Não foi possível registrar a execução no Painel de Saúde: %s", e)

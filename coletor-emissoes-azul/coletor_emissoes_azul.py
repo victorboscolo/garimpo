@@ -31,7 +31,7 @@ from datetime import date, timedelta
 import httpx
 from seleniumbase import Driver
 
-from chave_api import API_BASE_URL, HEADERS, aquecer
+from chave_api import API_BASE_URL, HEADERS, aquecer, reportar_execucao
 from parsing import extrair_ofertas_azul_pelo_mundo_dom
 from urls import url_azul_pelo_mundo
 
@@ -123,6 +123,9 @@ def enviar_oferta(client: httpx.Client, rota: dict, data_ida: date, oferta: dict
     return False
 
 
+JOB = "coletor_azul"
+
+
 def main(limite: int) -> None:
     aquecer()
     with httpx.Client(timeout=15.0, headers=HEADERS) as client:
@@ -130,13 +133,20 @@ def main(limite: int) -> None:
 
         if not rotas:
             logger.error("Nenhuma rota AZUL_PELO_MUNDO encontrada em rotas_emissao — rode o seed antes.")
+            reportar_execucao(JOB, "FALHA", erro="Nenhuma rota AZUL_PELO_MUNDO cadastrada")
             return
 
         logger.info("Rodando %d rota(s): %s", len(rotas), [f"{r['origem']}->{r['destino']}" for r in rotas])
 
         gravadas, sem_oferta, falhas = 0, 0, 0
 
-        driver = Driver(uc=True, headless=False)
+        try:
+            driver = Driver(uc=True, headless=False)
+        except Exception as e:
+            logger.exception("Falha ao abrir o navegador.")
+            reportar_execucao(JOB, "FALHA", erro=str(e)[:500])
+            return
+
         try:
             for rota in rotas:
                 try:
@@ -164,6 +174,7 @@ def main(limite: int) -> None:
             driver.quit()
 
         logger.info("Concluído: %d gravadas, %d sem oferta, %d falhas.", gravadas, sem_oferta, falhas)
+        reportar_execucao(JOB, "SUCESSO", criadas=gravadas, descartadas=sem_oferta, falhas=falhas)
 
 
 if __name__ == "__main__":
