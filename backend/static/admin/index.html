@@ -1522,7 +1522,15 @@ function renderHistoricoNota(id, classificacoes) {
   if (!classificacoes || classificacoes.length <= 1) {
     return `<div class="sem-dados" id="historico-nota-${id}">Classificada uma única vez até agora, ainda sem reprocessamento.</div>`;
   }
-  const linhas = classificacoes.map(c => {
+  // `classificacoes` vem mais recente -> mais antiga. Reprocessamentos que
+  // não mudam a categoria (a nota oscila um pouco, mas continua Excepcional,
+  // por exemplo) não interessam aqui — pedido do usuário (22/09): só
+  // mostrar quando há alteração real de categoria, não toda reclassificação
+  // (uma promoção reprocessada semanalmente chegava a 108 linhas repetidas).
+  // O estado atual sempre aparece; os demais só quando a categoria difere
+  // da reclassificação seguinte (mais recente que ela).
+  const relevantes = classificacoes.filter((c, i) => i === 0 || c.categoria !== classificacoes[i - 1].categoria);
+  const linhas = relevantes.map(c => {
     const info = CATEGORIA_INFO[c.categoria] || { label: c.categoria };
     return `<div class="campo">
       <span class="rotulo">${formatData(c.processada_em)}${c.ativa ? " (atual)" : ""}:</span>
