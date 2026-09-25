@@ -1,3 +1,5 @@
+import os
+
 from fastapi import Depends, FastAPI
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import Response
@@ -61,4 +63,6 @@ app.mount("/admin", PainelSemCache(directory="static/admin", html=True), name="a
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    # `commit` é o que o Render injeta em RENDER_GIT_COMMIT — permite saber, de
+    # fora, se um deploy já terminou (o /health devolve o commit novo).
+    return {"status": "ok", "commit": os.environ.get("RENDER_GIT_COMMIT", "local")[:7]}
