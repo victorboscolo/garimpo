@@ -34,12 +34,54 @@ class HistoricoFamilia:
     maior_valor_historico_clube: Decimal | None = None
 
 
+async def vinculos_do_parceiro(db: AsyncSession, parceiro_id, cache=None) -> list:
+    """Vínculos parceiro↔categoria de origem (onde mora a curadoria)."""
+    if cache is None:
+        return (await db.execute(
+            select(ParceiroCategoria).filter_by(parceiro_id=parceiro_id)
+        )).scalars().all()
+
+    # Em lote: lê os vínculos de todos os parceiros de uma vez (a tabela tem
+    # poucas centenas de linhas) em vez de uma consulta por parceiro.
+    async def carregar():
+        por_parceiro: dict = {}
+        for v in (await db.execute(select(ParceiroCategoria))).scalars().all():
+            por_parceiro.setdefault(v.parceiro_id, []).append(v)
+        return por_parceiro
+
+    return (await cache.obter("vinculos", carregar)).get(parceiro_id, [])
+
+
+async def _aprovadas_leves(db: AsyncSession, programa_id, cache=None) -> list:
+    """Ofertas aprovadas/publicadas do programa, só com as colunas que o
+    motor usa pra comparar (não a promoção inteira, com o texto do
+    regulamento) — a base de comparação do mercado e, em lote, também a
+    fonte do histórico de cada parceiro (ver `obter_historico_familia`).
+
+    Cada linha responde aos mesmos atributos que `valor_comparavel` lê.
+    """
+    async def buscar():
+        stmt = select(
+            Promocao.id, Promocao.parceiro_id, Promocao.created_at, Promocao.pontuacao,
+            Promocao.pontuacao_clube, Promocao.valor_condicionado, Promocao.valor_condicionado_piso,
+        ).filter(
+            Promocao.programa_id == programa_id,
+            Promocao.status.in_(["APROVADA", "PUBLICADA"]),
+        )
+        return (await db.execute(stmt)).all()
+
+    if cache is None:
+        return await buscar()
+    return await cache.obter(("aprovadas", programa_id), buscar)
+
+
 async def obter_historico_familia(
     db: AsyncSession,
     parceiro_id: uuid.UUID,
     programa_id: uuid.UUID,
     dominio_id: uuid.UUID | None = None,
     excluir_promocao_id: uuid.UUID | None = None,
+    cache=None,
 ) -> HistoricoFamilia:
     """Retorna o histórico ponderado da família, com nível de confiança.
 
@@ -47,11 +89,22 @@ async def obter_historico_familia(
     de N campanhas dentro da janela configurada (default 3 campanhas / 365
     dias). Abaixo disso, confianca_historica = BAIXA (o fallback para
     parceiro/mercado, quando implementado, deve ser acionado pelo chamador).
+
+    `cache` (ver `motor/cache.py`): só o reprocessamento em lote passa um.
     """
-    limiar = await resolver_configuracao(db, "historico_suficiente", dominio_id=dominio_id, programa_id=programa_id, parceiro_id=parceiro_id)
+    if cache is not None:
+        return await cache.obter(
+            ("familia", parceiro_id, programa_id, dominio_id, excluir_promocao_id),
+            lambda: _historico_familia(db, parceiro_id, programa_id, dominio_id, excluir_promocao_id, cache),
+        )
+    return await _historico_familia(db, parceiro_id, programa_id, dominio_id, excluir_promocao_id, None)
+
+
+async def _historico_familia(db, parceiro_id, programa_id, dominio_id, excluir_promocao_id, cache):
+    limiar = await resolver_configuracao(db, "historico_suficiente", dominio_id=dominio_id, programa_id=programa_id, parceiro_id=parceiro_id, cache=cache)
     limiar = limiar or {"min_campanhas": 3, "janela_dias": 365}
 
-    peso_temporal = await resolver_configuracao(db, "peso_temporal", dominio_id=dominio_id, programa_id=programa_id, parceiro_id=parceiro_id)
+    peso_temporal = await resolver_configuracao(db, "peso_temporal", dominio_id=dominio_id, programa_id=programa_id, parceiro_id=parceiro_id, cache=cache)
     peso_temporal = peso_temporal or {
         "recente_dias": 180, "recente_peso": 1.0,
         "medio_dias": 365, "medio_peso": 0.6,
@@ -60,14 +113,25 @@ async def obter_historico_familia(
 
     janela_inicio = datetime.now(timezone.utc) - timedelta(days=limiar["janela_dias"])
 
-    stmt = select(Promocao).filter_by(parceiro_id=parceiro_id, programa_id=programa_id)
-    stmt = stmt.filter(Promocao.created_at >= janela_inicio)
-    stmt = stmt.filter(Promocao.status.in_(["APROVADA", "PUBLICADA"]))
-    if excluir_promocao_id is not None:
-        stmt = stmt.filter(Promocao.id != excluir_promocao_id)
+    if cache is not None:
+        # Em lote: as ofertas aprovadas do programa já estão carregadas (uma
+        # leitura só, pro programa inteiro) — filtra aqui, com exatamente os
+        # mesmos critérios da consulta abaixo.
+        linhas = await _aprovadas_leves(db, programa_id, cache)
+        campanhas = [
+            l for l in linhas
+            if l.parceiro_id == parceiro_id and l.created_at >= janela_inicio
+            and (excluir_promocao_id is None or l.id != excluir_promocao_id)
+        ]
+    else:
+        stmt = select(Promocao).filter_by(parceiro_id=parceiro_id, programa_id=programa_id)
+        stmt = stmt.filter(Promocao.created_at >= janela_inicio)
+        stmt = stmt.filter(Promocao.status.in_(["APROVADA", "PUBLICADA"]))
+        if excluir_promocao_id is not None:
+            stmt = stmt.filter(Promocao.id != excluir_promocao_id)
 
-    resultado = await db.execute(stmt)
-    campanhas = resultado.scalars().all()
+        resultado = await db.execute(stmt)
+        campanhas = resultado.scalars().all()
 
     total = len(campanhas)
     if total == 0:
@@ -138,48 +202,60 @@ class BaseComparacao:
     distribuicao: list = field(default_factory=list)
 
 
-async def _valores_do_segmento(db: AsyncSession, categoria_origem_id, programa_id):
+_COLUNAS_DO_VALOR = (Promocao.pontuacao, Promocao.valor_condicionado, Promocao.valor_condicionado_piso)
+
+
+async def _valores_do_segmento(db: AsyncSession, categoria_origem_id, programa_id, cache=None):
     """Valores comparáveis das ofertas aprovadas de um segmento bruto
     (nível de slug de origem).
 
     Usado quando não há curadoria por parceiro — o fallback de sempre.
-    Seleciona a promoção inteira, não só `pontuacao`, porque
-    `valor_comparavel` precisa também de `valor_condicionado`/
-    `valor_condicionado_piso` (achado do usuário, 09/09) — uma oferta
-    condicionada não entra na régua de comparação com o número anunciado.
+    Seleciona só as três colunas que `valor_comparavel` lê (`pontuacao`,
+    `valor_condicionado`, `valor_condicionado_piso` — achado do usuário,
+    09/09: uma oferta condicionada não entra na régua de comparação com o
+    número anunciado), e não a promoção inteira: o texto do regulamento
+    pesa e não entra na conta.
     """
-    stmt = (
-        select(Promocao)
-        .join(ParceiroCategoria, ParceiroCategoria.parceiro_id == Promocao.parceiro_id)
-        .filter(
-            ParceiroCategoria.categoria_origem_id == categoria_origem_id,
-            Promocao.programa_id == programa_id,
-            Promocao.status.in_(["APROVADA", "PUBLICADA"]),
+    async def buscar():
+        stmt = (
+            select(*_COLUNAS_DO_VALOR)
+            .join(ParceiroCategoria, ParceiroCategoria.parceiro_id == Promocao.parceiro_id)
+            .filter(
+                ParceiroCategoria.categoria_origem_id == categoria_origem_id,
+                Promocao.programa_id == programa_id,
+                Promocao.status.in_(["APROVADA", "PUBLICADA"]),
+            )
         )
-    )
-    promocoes = (await db.execute(stmt)).scalars().all()
-    return [valor_comparavel(p) for p in promocoes]
+        return [valor_comparavel(l) for l in (await db.execute(stmt)).all()]
+
+    if cache is None:
+        return await buscar()
+    return await cache.obter(("segmento", categoria_origem_id, programa_id), buscar)
 
 
-async def _valores_da_categoria(db: AsyncSession, categoria_id, programa_id):
+async def _valores_da_categoria(db: AsyncSession, categoria_id, programa_id, cache=None):
     """Valores comparáveis das ofertas aprovadas de todo parceiro cuja
     categoria canônica efetiva (curadoria por parceiro, com fallback pro
     padrão do slug de origem) é esta — dentro do mesmo programa, nunca
     misturando Livelo com Esfera. Mesmo motivo de `_valores_do_segmento`
-    pra selecionar a promoção inteira, não só `pontuacao`.
+    pra selecionar só as colunas do valor, não a promoção inteira.
     """
-    stmt = (
-        select(Promocao)
-        .join(ParceiroCategoria, ParceiroCategoria.parceiro_id == Promocao.parceiro_id)
-        .join(CategoriaOrigem, CategoriaOrigem.id == ParceiroCategoria.categoria_origem_id)
-        .filter(
-            func.coalesce(ParceiroCategoria.categoria_id, CategoriaOrigem.categoria_id) == categoria_id,
-            Promocao.programa_id == programa_id,
-            Promocao.status.in_(["APROVADA", "PUBLICADA"]),
+    async def buscar():
+        stmt = (
+            select(*_COLUNAS_DO_VALOR)
+            .join(ParceiroCategoria, ParceiroCategoria.parceiro_id == Promocao.parceiro_id)
+            .join(CategoriaOrigem, CategoriaOrigem.id == ParceiroCategoria.categoria_origem_id)
+            .filter(
+                func.coalesce(ParceiroCategoria.categoria_id, CategoriaOrigem.categoria_id) == categoria_id,
+                Promocao.programa_id == programa_id,
+                Promocao.status.in_(["APROVADA", "PUBLICADA"]),
+            )
         )
-    )
-    promocoes = (await db.execute(stmt)).scalars().all()
-    return [valor_comparavel(p) for p in promocoes]
+        return [valor_comparavel(l) for l in (await db.execute(stmt)).all()]
+
+    if cache is None:
+        return await buscar()
+    return await cache.obter(("categoria", categoria_id, programa_id), buscar)
 
 
 # Uma única oferta anterior não é histórico: é uma coincidência. Comparar com
@@ -224,6 +300,7 @@ async def obter_base_comparacao(
     minimo_segmento: int = 5,
     minimo_familia: int | None = None,
     cv_maximo_familia: float | None = None,
+    cache=None,
 ) -> BaseComparacao:
     """Resolve contra o que comparar a oferta, em cascata.
 
@@ -244,7 +321,7 @@ async def obter_base_comparacao(
     mínimo de quantidade. Falha nesse critério desce a cascata pro
     segmento/mercado, igual já acontece com amostra insuficiente.
     """
-    limiar = await resolver_configuracao(db, "historico_suficiente", programa_id=programa_id)
+    limiar = await resolver_configuracao(db, "historico_suficiente", programa_id=programa_id, cache=cache)
     if minimo_familia is None:
         minimo_familia = (limiar or {}).get("min_para_base", MINIMO_PARA_USAR_FAMILIA)
     if cv_maximo_familia is None:
@@ -252,7 +329,7 @@ async def obter_base_comparacao(
 
     familia = await obter_historico_familia(
         db, parceiro_id=parceiro_id, programa_id=programa_id,
-        excluir_promocao_id=excluir_promocao_id,
+        excluir_promocao_id=excluir_promocao_id, cache=cache,
     )
     valores_familia = [pontuacao for pontuacao, _ in familia.amostras]
     if (
@@ -271,14 +348,12 @@ async def obter_base_comparacao(
 
     # Vínculos do parceiro (não só o slug — precisa da curadoria por parceiro
     # também, que mora no vínculo, não no slug).
-    vinculos = (await db.execute(
-        select(ParceiroCategoria).filter_by(parceiro_id=parceiro_id)
-    )).scalars().all()
+    vinculos = await vinculos_do_parceiro(db, parceiro_id, cache)
 
     candidatos = []
     fonte_por_rotulo = {}  # rotulo -> ("categoria", categoria_id) | ("origem", categoria_origem_id)
     for vinculo in vinculos:
-        origem = await db.get(CategoriaOrigem, vinculo.categoria_origem_id)
+        origem = await (cache.obter_por_id(db, CategoriaOrigem, vinculo.categoria_origem_id) if cache else db.get(CategoriaOrigem, vinculo.categoria_origem_id))
         if origem is None:
             continue
         # A curadoria por parceiro vence; na ausência dela, cai pro padrão do
@@ -286,13 +361,13 @@ async def obter_base_comparacao(
         # das duas, usa o slug bruto — o comportamento de sempre.
         categoria_efetiva_id = vinculo.categoria_id or origem.categoria_id
         if categoria_efetiva_id is not None:
-            canonica = await db.get(Categoria, categoria_efetiva_id)
+            canonica = await (cache.obter_por_id(db, Categoria, categoria_efetiva_id) if cache else db.get(Categoria, categoria_efetiva_id))
             if canonica is not None:
-                total = len(await _valores_da_categoria(db, categoria_efetiva_id, programa_id))
+                total = len(await _valores_da_categoria(db, categoria_efetiva_id, programa_id, cache))
                 candidatos.append((canonica.nome, total))
                 fonte_por_rotulo[canonica.nome] = ("categoria", categoria_efetiva_id)
                 continue
-        total = len(await _valores_do_segmento(db, origem.id, programa_id))
+        total = len(await _valores_do_segmento(db, origem.id, programa_id, cache))
         candidatos.append((origem.slug, total))
         fonte_por_rotulo[origem.slug] = ("origem", origem.id)
 
@@ -300,20 +375,16 @@ async def obter_base_comparacao(
     if escolhido is not None:
         tipo, id_escolhido = fonte_por_rotulo[escolhido]
         if tipo == "categoria":
-            valores = await _valores_da_categoria(db, id_escolhido, programa_id)
+            valores = await _valores_da_categoria(db, id_escolhido, programa_id, cache)
         else:
-            valores = await _valores_do_segmento(db, id_escolhido, programa_id)
+            valores = await _valores_do_segmento(db, id_escolhido, programa_id, cache)
         media = Decimal(str(sum(valores) / len(valores))) if valores else None
         return BaseComparacao(
             media_ponderada=media, total=len(valores), nivel="SEGMENTO",
             rotulo=escolhido, confianca_historica="MEDIA", distribuicao=valores,
         )
 
-    stmt_mercado = select(Promocao).filter(
-        Promocao.programa_id == programa_id,
-        Promocao.status.in_(["APROVADA", "PUBLICADA"]),
-    )
-    promocoes_mercado = (await db.execute(stmt_mercado)).scalars().all()
+    promocoes_mercado = await _aprovadas_leves(db, programa_id, cache)
     valores = [valor_comparavel(p) for p in promocoes_mercado]
     if not valores:
         return BaseComparacao(None, 0, "NENHUMA", None, "BAIXA")

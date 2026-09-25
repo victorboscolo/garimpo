@@ -9,12 +9,13 @@ import logging
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.configuracoes_service import resolver_configuracao
 from application.motor import pilares
-from application.motor.historico import obter_base_comparacao, obter_historico_familia
+from application.motor.cache import CacheMotor
+from application.motor.historico import _aprovadas_leves, obter_base_comparacao, obter_historico_familia, vinculos_do_parceiro
 from application.motor.percentil import valor_comparavel
 from domain.motor import ENTIDADE_PROMOCAO, Classificacao
 from domain.promocoes import CategoriaPromocao, Promocao
@@ -37,7 +38,7 @@ FAIXAS_DEFAULT = {
 }
 
 
-async def _mercado(db: AsyncSession, programa_id) -> list:
+async def _mercado(db: AsyncSession, programa_id, cache=None) -> list:
     """Valores comparáveis das ofertas aprovadas/publicadas do programa —
     o 'mercado competitivo' contra o qual o pilar Atratividade posiciona
     a oferta.
@@ -50,11 +51,13 @@ async def _mercado(db: AsyncSession, programa_id) -> list:
     com o número anunciado, quando o que qualquer comprador realmente
     recebe é o piso.
     """
-    stmt = select(Promocao).filter_by(programa_id=programa_id).filter(
-        Promocao.status.in_(["APROVADA", "PUBLICADA"])
-    )
-    promocoes = (await db.execute(stmt)).scalars().all()
-    return [valor_comparavel(p) for p in promocoes]
+    async def montar():
+        linhas = await _aprovadas_leves(db, programa_id, cache)
+        return [valor_comparavel(l) for l in linhas]
+
+    if cache is None:
+        return await montar()
+    return await cache.obter(("mercado", programa_id), montar)
 
 
 def _resolver_categoria(nota: float, faixas: dict) -> str:
@@ -115,7 +118,7 @@ def _montar_justificativa(criterios: dict, categoria: str, confianca_historica: 
     return " ".join(partes)
 
 
-async def _parceiro_e_varejo(db: AsyncSession, parceiro_id) -> bool:
+async def _parceiro_e_varejo(db: AsyncSession, parceiro_id, cache=None) -> bool:
     """O parceiro está classificado na categoria canônica "Varejo"?
 
     Decisão do usuário (01/09): pra um parceiro de varejo com catálogo
@@ -134,63 +137,77 @@ async def _parceiro_e_varejo(db: AsyncSession, parceiro_id) -> bool:
     — `esfera_api._categorias`). Nesses casos a classificação é uma decisão
     humana direta, não derivada de vínculo nenhum.
     """
-    from domain.cadastros import Categoria, CategoriaOrigem, Parceiro, ParceiroCategoria
+    if cache is not None:
+        return await cache.obter(("varejo", parceiro_id), lambda: _varejo_de_verdade(db, parceiro_id, cache))
+    return await _varejo_de_verdade(db, parceiro_id, None)
 
-    vinculos = (await db.execute(
-        select(ParceiroCategoria).filter_by(parceiro_id=parceiro_id)
-    )).scalars().all()
+
+async def _varejo_de_verdade(db: AsyncSession, parceiro_id, cache) -> bool:
+    from domain.cadastros import Categoria, CategoriaOrigem, Parceiro
+
+    async def obter(modelo, id_):
+        return await (cache.obter_por_id(db, modelo, id_) if cache else db.get(modelo, id_))
+
+    vinculos = await vinculos_do_parceiro(db, parceiro_id, cache)
 
     for vinculo in vinculos:
         categoria_efetiva_id = vinculo.categoria_id
         if categoria_efetiva_id is None:
-            origem = await db.get(CategoriaOrigem, vinculo.categoria_origem_id)
+            origem = await obter(CategoriaOrigem, vinculo.categoria_origem_id)
             categoria_efetiva_id = origem.categoria_id if origem else None
         if categoria_efetiva_id is None:
             continue
-        categoria = await db.get(Categoria, categoria_efetiva_id)
+        categoria = await obter(Categoria, categoria_efetiva_id)
         if categoria is not None and categoria.nome == "Varejo":
             return True
 
-    parceiro = await db.get(Parceiro, parceiro_id)
+    parceiro = await obter(Parceiro, parceiro_id)
     if parceiro is not None and parceiro.categoria_id is not None:
-        categoria = await db.get(Categoria, parceiro.categoria_id)
+        categoria = await obter(Categoria, parceiro.categoria_id)
         if categoria is not None and categoria.nome == "Varejo":
             return True
 
     return False
 
 
-async def classificar_promocao(db: AsyncSession, promocao: Promocao) -> Classificacao:
+async def classificar_promocao(db: AsyncSession, promocao: Promocao, cache: CacheMotor | None = None) -> Classificacao:
     """Executa o Motor V1 sobre uma promoção e persiste o resultado.
 
     Desativa qualquer classificação ativa anterior da mesma entidade antes
     de criar a nova (regra: apenas uma `ativa=True` por entidade).
+
+    `cache` (só o lote passa um, ver `reclassificar_todas`): leituras
+    repetidas entre promoções saem do cache, e o `flush` fica pro `commit`
+    do lote — o resultado gravado é o mesmo.
     """
     pesos = await resolver_configuracao(
-        db, "pesos_motor_v1", programa_id=promocao.programa_id, parceiro_id=promocao.parceiro_id
+        db, "pesos_motor_v1", programa_id=promocao.programa_id, parceiro_id=promocao.parceiro_id, cache=cache
     ) or PESOS_DEFAULT
     faixas = await resolver_configuracao(
-        db, "faixas_classificacao", programa_id=promocao.programa_id, parceiro_id=promocao.parceiro_id
+        db, "faixas_classificacao", programa_id=promocao.programa_id, parceiro_id=promocao.parceiro_id, cache=cache
     ) or FAIXAS_DEFAULT
 
     historico = await obter_historico_familia(
         db, parceiro_id=promocao.parceiro_id, programa_id=promocao.programa_id,
-        excluir_promocao_id=promocao.id,
+        excluir_promocao_id=promocao.id, cache=cache,
     )
     # Base do pilar Histórico, em cascata: histórico próprio -> segmento ->
     # mercado. Sem isso o pilar devolvia neutro para 223 dos 249 parceiros, que
     # não têm oferta aprovada anterior com que se comparar.
     base = await obter_base_comparacao(
         db, parceiro_id=promocao.parceiro_id, programa_id=promocao.programa_id,
-        excluir_promocao_id=promocao.id,
+        excluir_promocao_id=promocao.id, cache=cache,
     )
-    mercado = await _mercado(db, promocao.programa_id)
+    mercado = await _mercado(db, promocao.programa_id, cache)
 
-    stmt_categorias = select(CategoriaPromocao).filter_by(promocao_id=promocao.id)
-    resultado_categorias = await db.execute(stmt_categorias)
-    qtd_categorias = len(resultado_categorias.scalars().all())
+    if cache is not None and "qtd_categorias" in cache.dados:
+        qtd_categorias = cache.dados["qtd_categorias"].get(promocao.id, 0)
+    else:
+        stmt_categorias = select(CategoriaPromocao).filter_by(promocao_id=promocao.id)
+        resultado_categorias = await db.execute(stmt_categorias)
+        qtd_categorias = len(resultado_categorias.scalars().all())
 
-    segmento_varejo = await _parceiro_e_varejo(db, promocao.parceiro_id)
+    segmento_varejo = await _parceiro_e_varejo(db, promocao.parceiro_id, cache)
 
     criterios = {
         "historico": pilares.pilar_historico_com_base(promocao, base),
@@ -209,11 +226,14 @@ async def classificar_promocao(db: AsyncSession, promocao: Promocao) -> Classifi
     justificativa = _montar_justificativa(criterios, categoria, base.confianca_historica, base)
 
     # Desativa a classificação anterior, se existir
-    stmt_ativa = select(Classificacao).filter_by(
-        entidade_tipo=ENTIDADE_PROMOCAO, entidade_id=promocao.id, ativa=True
-    )
-    resultado_ativa = await db.execute(stmt_ativa)
-    anterior = resultado_ativa.scalar_one_or_none()
+    if cache is not None and "ativas" in cache.dados:
+        anterior = cache.dados["ativas"].get(promocao.id)
+    else:
+        stmt_ativa = select(Classificacao).filter_by(
+            entidade_tipo=ENTIDADE_PROMOCAO, entidade_id=promocao.id, ativa=True
+        )
+        resultado_ativa = await db.execute(stmt_ativa)
+        anterior = resultado_ativa.scalar_one_or_none()
     if anterior is not None:
         anterior.ativa = False
 
@@ -231,7 +251,8 @@ async def classificar_promocao(db: AsyncSession, promocao: Promocao) -> Classifi
         processada_em=datetime.now(timezone.utc),
     )
     db.add(nova_classificacao)
-    await db.flush()
+    if cache is None:
+        await db.flush()
 
     return nova_classificacao
 
@@ -259,14 +280,52 @@ async def reclassificar_todas(db: AsyncSession) -> dict:
         select(Promocao).filter(Promocao.status.in_(["PENDENTE", "APROVADA"]))
     )).scalars().unique().all()
 
-    processadas = erros = 0
-    for promocao in promocoes:
-        try:
-            await classificar_promocao(db, promocao)
-            processadas += 1
-        except Exception:
-            logger.exception("Falha ao reclassificar promoção %s", promocao.id)
-            erros += 1
+    _, erros = await classificar_em_lote(db, promocoes)
     await db.commit()
 
-    return {"total": len(promocoes), "processadas": processadas, "erros": erros}
+    return {"total": len(promocoes), "processadas": len(promocoes) - erros, "erros": erros}
+
+
+async def classificar_em_lote(db: AsyncSession, promocoes: list) -> tuple[list, int]:
+    """Classifica várias promoções lendo os dados de comparação uma vez só.
+
+    Sem isto, cada promoção relia o mercado, o segmento e as configurações
+    do zero. Com o banco no Neon isso virou 32 min e a maior parte dos 5 GB
+    mensais de transferência num único reprocessamento (24/09/2026); em
+    lote, a leitura é uma por programa/segmento/parceiro (ver
+    `motor/cache.py`). O resultado de cada promoção é idêntico ao de
+    `classificar_promocao` sem cache — não faz `commit`, quem chama decide.
+
+    Devolve (classificações criadas, quantidade de erros).
+    """
+    cache = CacheMotor()
+    ids = [p.id for p in promocoes]
+
+    contagem = (await db.execute(
+        select(CategoriaPromocao.promocao_id, func.count())
+        .filter(CategoriaPromocao.promocao_id.in_(ids)).group_by(CategoriaPromocao.promocao_id)
+    )).all() if ids else []
+    cache.dados["qtd_categorias"] = {promocao_id: n for promocao_id, n in contagem}
+
+    ativas = (await db.execute(
+        select(Classificacao).filter(
+            Classificacao.entidade_tipo == ENTIDADE_PROMOCAO,
+            Classificacao.ativa.is_(True),
+            Classificacao.entidade_id.in_(ids),
+        )
+    )).scalars().all() if ids else []
+    cache.dados["ativas"] = {c.entidade_id: c for c in ativas}
+
+    criadas, erros = [], 0
+    # Sem autoflush: a nota de uma promoção não depende das classificações
+    # das outras (só de promoções, vínculos e configurações), então nada
+    # precisa ser gravado antes do fim — o commit do chamador grava tudo em
+    # lote, em vez de um INSERT/UPDATE por promoção.
+    with db.no_autoflush:
+        for promocao in promocoes:
+            try:
+                criadas.append(await classificar_promocao(db, promocao, cache))
+            except Exception:
+                logger.exception("Falha ao reclassificar promoção %s", promocao.id)
+                erros += 1
+    return criadas, erros
