@@ -54,7 +54,23 @@ async def listar_promocoes(
     parceiro_id: uuid.UUID | None = None,
     db: AsyncSession = Depends(get_db),
 ):
-    stmt = _stmt_listagem()
+    """É este endpoint, não `/pendentes`, que o painel chama pra aba
+    Pendentes (`GET ?status=PENDENTE`) — `/pendentes` não é consumido por
+    nada hoje.
+
+    Pendente vencida some daqui, sempre — não só quando filtrado por
+    `status=PENDENTE` explicitamente, também dentro de "Todas" (achado do
+    usuário, 28/09: nada foi revisado no fim de semana, e segunda a fila
+    trazia ofertas que já tinham expirado nesse meio-tempo. Pendente é fila
+    de ação; uma oferta vencida não tem mais o que decidir). Aprovada/
+    Rejeitada continuam aparecendo mesmo vencidas — ali é histórico, não
+    fila, e sumir esconderia o que já foi decidido.
+    """
+    from sqlalchemy import or_
+
+    from application.vigencia import filtro_vigente
+
+    stmt = _stmt_listagem().filter(or_(Promocao.status != "PENDENTE", filtro_vigente()))
     if status:
         stmt = stmt.filter(Promocao.status == status)
     if programa_id:
@@ -67,7 +83,18 @@ async def listar_promocoes(
 
 @router.get("/pendentes", response_model=list[PromocaoOut])
 async def listar_pendentes(db: AsyncSession = Depends(get_db)):
-    stmt = _stmt_listagem().filter(Promocao.status == "PENDENTE")
+    """Pendentes é fila de ação, não histórico — uma oferta já vencida não
+    tem mais o que revisar (achado do usuário, 28/09: nada foi revisado no
+    fim de semana, e segunda-feira a fila trazia ofertas que já tinham
+    expirado nesse meio-tempo). Usa a mesma regra de vigência da fila de
+    publicação e de Destaques (`filtro_vigente`, application/vigencia.py) —
+    sem data_fim, a oferta nunca expira (taxas estáveis, tipo o "BAU" da
+    Livelo); com data_fim, vale até o fim do último dia, não a meia-noite
+    do início dele.
+    """
+    from application.vigencia import filtro_vigente
+
+    stmt = _stmt_listagem().filter(Promocao.status == "PENDENTE").filter(filtro_vigente())
     resultado = await db.execute(stmt)
     return resultado.scalars().unique().all()
 
