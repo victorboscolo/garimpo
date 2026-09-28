@@ -101,8 +101,8 @@ def enviar_para_api(parceiros: list[ParceiroEsfera]) -> dict:
                 "categorias": p.categorias,
                 "pontuacao_anterior": None,
                 "em_promocao": False,
-                "data_inicio": None,
-                "data_fim": None,
+                "data_inicio": p.data_inicio.isoformat() if p.data_inicio else None,
+                "data_fim": p.data_fim.isoformat() if p.data_fim else None,
                 "origem_detalhe": "COLETOR_ESFERA",
             }
             try:

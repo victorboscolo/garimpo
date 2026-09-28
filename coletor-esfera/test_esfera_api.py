@@ -11,6 +11,7 @@ metadado de e-commerce (imagens, frete, SKU) que não interessa ao Garimpo.
 """
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 
 from esfera_api import parceiro_para_bruta
@@ -36,6 +37,29 @@ ITEM_RENNER = {
         {"repositoryId": "new02163"},
         {"repositoryId": "esf02163"},
     ],
+}
+
+# Rentcars, achado real de 28/09/2026: forma curta do padrão de validade,
+# sem "de HHhMMmin do dia" no início — só o fim. Foi o caso que ficou
+# aprovado e visível no painel dias depois de vencido, porque nada extraía
+# essa data antes.
+ITEM_RENTCARS = {
+    "id": "e000100485",
+    "displayName": "Rentcars",
+    "active": True,
+    "esf_accumulationValue": "17",
+    "esf_accumulationPrefix": "até",
+    "esf_accumulationFactorDescription": "dólar em compra",
+    "esf_campaignId": None,
+    "route": "/p/rentcars/e000100485",
+    "esf_accumulationGeneralRules": (
+        "<p>* Novos clientes: clientes que realizarem sua primeira reserva "
+        "na Rentcars por intermédio da Esfera ganharão 17 pontos a cada "
+        "dólar gasto. Os demais clientes ganharão 15 pontos a cada dólar "
+        "gasto; * Condições válidas para reservas realizadas até "
+        "27/09/2026, às 23h59, horário de Brasília.</p>"
+    ),
+    "parentCategories": [{"repositoryId": "new02163"}],
 }
 
 # C&A: prefixo em minúsculo ("até") — o parser não pode depender de caixa.
@@ -138,16 +162,42 @@ def test_categoria_container_e_taxonomia_antiga_sao_descartadas():
     assert bruta.categorias == ["newModaCalcadosAcessorios"]
 
 
-def test_sem_pontuacao_base_nem_datas_por_ora():
+def test_sem_pontuacao_base_por_ora():
     """A Esfera não expõe campo limpo equivalente ao `parityBau` (piso fora
-    de campanha) nem a `dateStart`/`dateEnd` da Livelo — o período e o valor
-    padrão só aparecem em texto livre, com redação diferente por parceiro
-    (a Casas Bahia, por exemplo, tem duas taxas diferentes na mesma frase).
-    Tentar extrair por regex arriscava inventar dado a partir de um padrão
-    que só bate em ~20% dos casos. Fica de fora até haver fonte confiável.
+    de campanha) — o valor padrão só aparece em texto livre, com redação
+    diferente por parceiro (a Casas Bahia, por exemplo, tem duas taxas
+    diferentes na mesma frase). Extrair por regex arriscaria inventar dado
+    a partir de um padrão que só bate numa minoria dos casos. Fica de fora
+    até haver fonte confiável — ao contrário de `data_inicio`/`data_fim`,
+    ver os testes de validade abaixo.
+    """
+    assert parceiro_para_bruta(ITEM_RENNER).pontuacao_base is None
+
+
+def test_extrai_inicio_e_fim_da_forma_completa():
+    """"de 00h00min do dia DD/MM/YYYY até 23h59min do dia DD/MM/YYYY" — a
+    forma mais comum (106 de 350 regulamentos reais em 28/09/2026).
     """
     bruta = parceiro_para_bruta(ITEM_RENNER)
-    assert bruta.pontuacao_base is None
+    assert bruta.data_inicio == date(2026, 8, 17)
+    assert bruta.data_fim == date(2026, 8, 21)
+
+
+def test_extrai_so_o_fim_da_forma_curta():
+    """Achado real (28/09/2026): a Rentcars ficou aprovada e visível no
+    painel dias depois de vencida, porque `data_fim` nunca era preenchido —
+    o regulamento dizia "válidas ... até 27/09/2026" e ninguém extraía isso.
+    """
+    bruta = parceiro_para_bruta(ITEM_RENTCARS)
+    assert bruta.data_inicio is None
+    assert bruta.data_fim == date(2026, 9, 27)
+
+
+def test_sem_padrao_de_validade_fica_sem_data():
+    """A maioria dos parceiros não tem prazo — oferta contínua, de verdade,
+    não falta de extração. Fica None, nunca uma data inventada.
+    """
+    bruta = parceiro_para_bruta(ITEM_BOOKING)
     assert bruta.data_inicio is None
     assert bruta.data_fim is None
 
