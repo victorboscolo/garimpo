@@ -3,203 +3,422 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0B1F3A">
 <title>Garimpo — Painel de Revisão</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-  :root {
-    --stone-50: #F3F0EA;
-    --stone-100: #E8E3D9;
-    --stone-200: #D8D0C0;
-    --stone-700: #4A4438;
-    --stone-900: #2B2721;
-    --ink: #232019;
+  /* ============================================================
+     Design system "Embarque" (07/10) — o painel fala de pontos e
+     milhas, então o visual vem da viagem: céu noturno virando pôr
+     do sol no topo, cards como cartão de embarque (picote, canhoto,
+     números em fonte de bilhete) e um avião na espera do
+     carregamento.
 
-    --excepcional: #B8862E;
-    --excepcional-bg: #FBF1DD;
-    --excelente: #4F7A5C;
-    --excelente-bg: #E9F2EB;
-    --boa: #4B7FA6;
-    --boa-bg: #E7F0F6;
-    --comum: #8A7E5C;
-    --comum-bg: #F1EDDF;
-    --pouco: #A65B4B;
-    --pouco-bg: #F6E9E6;
+     Fluido: tipografia e espaçamento em clamp(), grades que se
+     reorganizam sozinhas — sem tamanho fixo por breakpoint.
+
+     Toda cor de texto aqui passa em contraste AA (4.5:1) sobre o
+     fundo em que é usada; as cores de categoria têm três tons:
+     texto (--x), fundo (--x-bg) e faixa decorativa (--x-forte).
+     ============================================================ */
+  :root {
+    color-scheme: light;
+
+    --noite: #0B1F3A;
+    --noite-2: #12365F;
+    --oceano: #0E6BA8;
+    --oceano-forte: #0A4F7D;
+    --por-do-sol: #E8590C;
+    --por-do-sol-claro: #FFB36B;
+
+    --fundo: #EEF3F8;
+    --superficie: #FFFFFF;
+    --superficie-2: #F5F8FB;
+    --tinta: #0F2233;
+    --tinta-2: #465A6E;
+    --linha: #D5E0EA;
+    --linha-forte: #7B8FA3;
+
+    --excepcional: #8A4B00;
+    --excepcional-bg: #FFF1D6;
+    --excepcional-forte: #E8A013;
+    --excelente: #1B6A44;
+    --excelente-bg: #E1F4E9;
+    --excelente-forte: #2E9E68;
+    --boa: #0B5C94;
+    --boa-bg: #E1EFFA;
+    --boa-forte: #3B8FCB;
+    --comum: #5C5540;
+    --comum-bg: #EFECE1;
+    --comum-forte: #A89F7F;
+    --pouco: #A3311F;
+    --pouco-bg: #FBE9E5;
+    --pouco-forte: #D2553F;
+
+    --fonte: "Plus Jakarta Sans", -apple-system, "Segoe UI", Roboto, sans-serif;
+    --fonte-bilhete: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+    --t-xs: 0.75rem;
+    --t-sm: 0.8125rem;
+    --t-base: clamp(0.9375rem, 0.9rem + 0.15vw, 1rem);
+    --t-lg: clamp(1.0625rem, 1rem + 0.35vw, 1.25rem);
+    --t-xl: clamp(1.5rem, 1.2rem + 1.4vw, 2.125rem);
+
+    --esp-1: clamp(0.5rem, 0.4rem + 0.4vw, 0.75rem);
+    --esp-2: clamp(0.75rem, 0.6rem + 0.7vw, 1.125rem);
+    --esp-3: clamp(1rem, 0.8rem + 1vw, 1.5rem);
+    --margem: clamp(1rem, 0.5rem + 2.5vw, 2.5rem);
+    --pad-card: clamp(1rem, 0.85rem + 0.6vw, 1.375rem);
+
+    --r-sm: 8px;
+    --r-md: 12px;
+    --r-lg: 18px;
+    --r-full: 999px;
+
+    --sombra-1: 0 1px 2px rgba(11, 31, 58, 0.06), 0 4px 14px rgba(11, 31, 58, 0.06);
+    --sombra-2: 0 2px 4px rgba(11, 31, 58, 0.08), 0 12px 28px rgba(11, 31, 58, 0.13);
+
+    --rapido: 150ms;
+    --suave: 240ms;
   }
 
   * { box-sizing: border-box; }
 
+  /* Vários elementos aqui ganham `display` próprio (flex, grid), que venceria
+     o `display: none` do atributo `hidden` — e o JS esconde coisas com ele. */
+  [hidden] { display: none !important; }
+
   body {
     margin: 0;
-    background: var(--stone-50);
-    color: var(--ink);
-    font-family: -apple-system, "SF Pro Text", "Segoe UI", sans-serif;
+    background: var(--fundo);
+    color: var(--tinta);
+    font-family: var(--fonte);
+    font-size: var(--t-base);
+    line-height: 1.5;
     -webkit-font-smoothing: antialiased;
+    overflow-wrap: anywhere;
   }
+
+  button, input { font-family: inherit; }
+  button { cursor: pointer; }
+
+  :focus-visible {
+    outline: 3px solid var(--por-do-sol);
+    outline-offset: 2px;
+  }
+
+  .icone {
+    width: 1.1em;
+    height: 1.1em;
+    flex: none;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    vertical-align: -0.18em;
+  }
+
+  /* ---- Topo: o céu ---- */
 
   header {
-    padding: 28px 32px 20px;
-    border-bottom: 1px solid var(--stone-200);
+    position: relative;
+    color: #fff;
+    background:
+      radial-gradient(60% 120% at 88% 130%, rgba(255, 138, 61, 0.6), transparent 60%),
+      radial-gradient(40% 90% at 60% 120%, rgba(232, 89, 12, 0.28), transparent 65%),
+      linear-gradient(120deg, var(--noite) 0%, var(--noite-2) 55%, #1B5F8C 100%);
+    padding: var(--esp-3) var(--margem) 0;
+  }
+
+  /* Rota tracejada com o avião — decoração pura, some em telas estreitas
+     pra não disputar espaço com a marca. */
+  .rota-decorativa {
+    position: absolute;
+    right: clamp(0px, 6vw, 120px);
+    top: 0;
+    height: 100%;
+    width: min(46vw, 520px);
+    opacity: 0.55;
+    pointer-events: none;
+  }
+  @media (max-width: 640px) { .rota-decorativa { display: none; } }
+
+  .topo-barra {
+    position: relative;
+    max-width: 1180px;
+    margin: 0 auto;
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
     flex-wrap: wrap;
-    gap: 12px;
+    gap: var(--esp-2);
   }
+
+  .marca { display: flex; align-items: center; gap: 12px; }
+
+  .marca-selo {
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    display: grid;
+    place-items: center;
+    color: var(--por-do-sol-claro);
+    flex: none;
+  }
+  .marca-selo .icone { width: 22px; height: 22px; }
 
   .brand {
-    font-family: Georgia, "Times New Roman", serif;
-    font-size: 26px;
-    font-weight: 600;
-    letter-spacing: -0.01em;
+    font-size: var(--t-xl);
+    font-weight: 800;
+    letter-spacing: -0.025em;
+    line-height: 1.1;
   }
-
-  .login-overlay {
-    position: fixed;
-    inset: 0;
-    background: var(--stone-50);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-  }
-
-  /* Sem isto, o `display: flex` acima empata em especificidade com a regra
-     `[hidden]` do navegador e vence por vir depois no CSS — o atributo
-     `hidden` setado via JS deixaria de esconder o overlay de verdade. */
-  .login-overlay[hidden] { display: none; }
-
-  .login-card {
-    background: white;
-    border: 1px solid var(--stone-200);
-    border-radius: 14px;
-    padding: 32px 30px;
-    width: 320px;
-  }
-
-  .login-card .brand { margin-bottom: 4px; }
-  .login-card .subtitle { margin-bottom: 22px; }
-
-  .login-card label {
-    display: block;
-    font-size: 12px;
-    color: var(--stone-700);
-    margin-bottom: 4px;
-    margin-top: 14px;
-  }
-
-  .login-card input {
-    width: 100%;
-    padding: 9px 10px;
-    border: 1px solid var(--stone-200);
-    border-radius: 8px;
-    font-size: 14px;
-    box-sizing: border-box;
-  }
-
-  .login-card button {
-    width: 100%;
-    margin-top: 20px;
-    padding: 10px;
-    border: none;
-    border-radius: 8px;
-    background: var(--stone-900);
-    color: var(--stone-50);
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-  }
-
-  .login-erro {
-    color: var(--pouco);
-    font-size: 13px;
-    margin-top: 12px;
-    min-height: 16px;
-  }
-
-  .usuario-logado {
-    font-size: 12px;
-    color: var(--stone-700);
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .usuario-logado[hidden] { display: none; }
-
-  .usuario-logado button {
-    background: none;
-    border: 1px solid var(--stone-200);
-    border-radius: 8px;
-    padding: 3px 9px;
-    font-size: 11px;
-    cursor: pointer;
-    color: var(--stone-700);
-  }
-
-  .brand .accent { color: var(--excepcional); }
+  .brand .accent { color: var(--por-do-sol-claro); font-weight: 500; }
 
   .subtitle {
-    font-size: 13px;
-    color: var(--stone-700);
+    font-size: var(--t-sm);
+    color: rgba(255, 255, 255, 0.82);
     margin-top: 2px;
   }
 
-  .tabs {
-    display: flex;
-    gap: 4px;
-  }
-
-  .tab {
-    padding: 8px 16px;
-    border-radius: 20px;
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
-    border: 1px solid var(--stone-200);
-    background: white;
-    color: var(--stone-700);
-  }
-
-  .tab.active {
-    background: var(--stone-900);
-    color: var(--stone-50);
-    border-color: var(--stone-900);
-  }
-
-  main {
-    max-width: 920px;
-    margin: 0 auto;
-    padding: 28px 32px 80px;
-  }
-
-  .status-line {
-    font-size: 13px;
-    color: var(--stone-700);
-    margin-bottom: 20px;
+  .usuario-logado {
+    font-size: var(--t-sm);
     display: flex;
     align-items: center;
     gap: 10px;
   }
+  /* Sem isto, o `display: flex` acima empata em especificidade com a regra
+     `[hidden]` do navegador e vence por vir depois no CSS — o atributo
+     `hidden` setado via JS deixaria de esconder o elemento de verdade. */
+  .usuario-logado[hidden] { display: none; }
 
-  .status-line button {
-    background: none;
-    border: 1px solid var(--stone-200);
-    border-radius: 8px;
-    padding: 4px 10px;
-    font-size: 12px;
-    cursor: pointer;
-    color: var(--stone-700);
+  .usuario-logado button {
+    min-height: 44px;
+    padding: 0 16px;
+    border-radius: var(--r-full);
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+    font-size: var(--t-sm);
+    font-weight: 600;
+    transition: background var(--rapido);
   }
+  .usuario-logado button:hover { background: rgba(255, 255, 255, 0.2); }
+
+  /* Abas: uma barra flutuando entre o céu e o conteúdo. Em tela estreita
+     rola na horizontal dentro dela mesma — a página nunca rola de lado. */
+  .tabs {
+    position: relative;
+    max-width: 1180px;
+    margin: var(--esp-3) auto 0;
+    transform: translateY(50%);
+    display: flex;
+    gap: 4px;
+    padding: 6px;
+    background: var(--superficie);
+    border-radius: var(--r-full);
+    box-shadow: var(--sombra-2);
+    overflow-x: auto;
+    scrollbar-width: none;
+    scroll-snap-type: x proximity;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+
+  .tab {
+    flex: 1 0 auto;
+    min-height: 44px;
+    padding: 0 clamp(14px, 1.6vw, 22px);
+    border: none;
+    border-radius: var(--r-full);
+    background: transparent;
+    color: var(--tinta-2);
+    font-size: var(--t-sm);
+    font-weight: 600;
+    white-space: nowrap;
+    scroll-snap-align: center;
+    transition: background var(--rapido), color var(--rapido);
+  }
+  .tab:hover { background: var(--fundo); color: var(--tinta); }
+  .tab.active,
+  .tab.active:hover { background: var(--noite); color: #fff; }
+
+  /* ---- Login ---- */
+
+  .login-overlay {
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(70% 60% at 80% 110%, rgba(255, 138, 61, 0.65), transparent 60%),
+      linear-gradient(150deg, var(--noite) 0%, var(--noite-2) 55%, #1B5F8C 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--margem);
+    z-index: 1000;
+  }
+  .login-overlay[hidden] { display: none; }
+
+  .login-card {
+    background: var(--superficie);
+    border-radius: var(--r-lg);
+    padding: clamp(1.5rem, 1rem + 3vw, 2.25rem);
+    width: min(100%, 380px);
+    box-shadow: var(--sombra-2);
+  }
+
+  .login-card .brand { color: var(--tinta); margin-bottom: 4px; font-size: 1.5rem; }
+  .login-card .brand .accent { color: var(--oceano); }
+  .login-card .subtitle { color: var(--tinta-2); margin-bottom: var(--esp-3); }
+
+  .login-card label {
+    display: block;
+    font-size: var(--t-sm);
+    font-weight: 600;
+    color: var(--tinta);
+    margin: var(--esp-2) 0 6px;
+  }
+
+  .login-card input {
+    width: 100%;
+    min-height: 48px;
+    padding: 0 14px;
+    border: 1px solid var(--linha-forte);
+    border-radius: var(--r-md);
+    font-size: 1rem;
+    color: var(--tinta);
+    background: var(--superficie);
+  }
+
+  .login-card button {
+    width: 100%;
+    min-height: 48px;
+    margin-top: var(--esp-3);
+    border: none;
+    border-radius: var(--r-md);
+    background: var(--noite);
+    color: #fff;
+    font-size: 1rem;
+    font-weight: 700;
+    transition: background var(--rapido);
+  }
+  .login-card button:hover { background: var(--noite-2); }
+
+  .login-erro {
+    color: var(--pouco);
+    font-size: var(--t-sm);
+    font-weight: 600;
+    margin-top: 12px;
+    min-height: 20px;
+  }
+
+  /* ---- Conteúdo ---- */
+
+  main {
+    max-width: calc(1180px + 2 * var(--margem));
+    margin: 0 auto;
+    padding: calc(var(--esp-3) + 44px) var(--margem) 96px;
+  }
+
+  .status-line {
+    font-size: var(--t-sm);
+    color: var(--tinta-2);
+    margin-bottom: var(--esp-2);
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    min-height: 44px;
+  }
+
+  #contador { font-weight: 600; color: var(--tinta); margin-right: auto; }
+
+  .status-line button,
+  .aviso-config button {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 44px;
+    padding: 0 16px;
+    border: 1px solid var(--linha-forte);
+    border-radius: var(--r-full);
+    background: var(--superficie);
+    color: var(--tinta);
+    font-size: var(--t-sm);
+    font-weight: 600;
+    transition: background var(--rapido), border-color var(--rapido);
+  }
+  .status-line button:hover,
+  .aviso-config button:hover { background: var(--superficie-2); border-color: var(--tinta-2); }
+
+  /* Espera do carregamento: a lista fica vazia enquanto a API responde (o
+     Render grátis pode levar ~30s pra acordar) — um avião cruzando a rota
+     tracejada avisa que tem coisa a caminho. */
+  #lista:empty {
+    position: relative;
+    height: 120px;
+  }
+  #lista:empty::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    border-top: 2px dashed var(--linha-forte);
+    opacity: 0.6;
+  }
+  #lista:empty::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: calc(50% - 15px);
+    width: 100%;
+    height: 30px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%230E6BA8' d='M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.500V19l-2 1.500V22l3.500-1 3.500 1v-1.500L13 19v-5.500z' transform='rotate(90 12 12)'/%3E%3C/svg%3E") no-repeat left center / 30px 30px;
+    animation: voo 2.4s ease-in-out infinite;
+  }
+  @keyframes voo {
+    from { transform: translateX(0); }
+    to { transform: translateX(calc(100% - 30px)); }
+  }
+
+  /* ---- Card ---- */
 
   .card {
-    background: white;
-    border: 1px solid var(--stone-200);
-    border-radius: 14px;
-    padding: 20px 22px;
-    margin-bottom: 14px;
+    position: relative;
+    overflow: hidden;
+    background: var(--superficie);
+    border: 1px solid var(--linha);
+    border-radius: var(--r-lg);
+    box-shadow: var(--sombra-1);
+    padding: var(--pad-card);
+    padding-left: calc(var(--pad-card) + 4px);
+    margin-bottom: var(--esp-2);
     display: grid;
-    grid-template-columns: 1fr auto;
-    gap: 16px;
+    grid-template-columns: auto 1fr auto;
+    gap: var(--esp-2);
     align-items: start;
   }
+  .card.sem-selecao { grid-template-columns: 1fr auto; }
+
+  /* Faixa lateral na cor da categoria — dá pra varrer a lista só pela cor,
+     mas a categoria continua escrita no selo (cor nunca é o único sinal). */
+  .card::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 5px;
+    background: var(--faixa, transparent);
+  }
+  .card:has(.cat-excepcional) { --faixa: var(--excepcional-forte); }
+  .card:has(.cat-excelente) { --faixa: var(--excelente-forte); }
+  .card:has(.cat-boa) { --faixa: var(--boa-forte); }
+  .card:has(.cat-comum) { --faixa: var(--comum-forte); }
+  .card:has(.cat-pouco) { --faixa: var(--pouco-forte); }
 
   .card-main { min-width: 0; }
 
@@ -207,86 +426,148 @@
      pedido do usuário), em vez da lista de uma coluna só das outras abas. */
   .lista-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-    gap: 12px;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 270px), 1fr));
+    gap: var(--esp-2);
+    align-items: start;
   }
   .lista-grid .empty-state { grid-column: 1 / -1; }
 
-  /* Card resumido de Destaques: o clique é no card inteiro, não num link
-     pequeno — precisa parecer clicável de propósito. Mais compacto que o
-     card cheio das outras abas, pra caber vários por linha. */
+  /* Card resumido de Destaques, em forma de cartão de embarque: em cima o
+     "destino" (parceiro, programa, cupom); abaixo do picote, o canhoto com
+     a pontuação e a nota. O clique é no card inteiro. */
   .card-destaque {
     cursor: pointer;
     grid-template-columns: 1fr;
-    padding: 14px 16px;
     margin-bottom: 0;
-    transition: border-color 0.15s;
+    transition: transform var(--suave), box-shadow var(--suave), border-color var(--suave);
   }
-  .card-destaque:hover { border-color: var(--stone-700); }
-  .card-destaque .parceiro-nome { font-size: 15px; }
-  .card-destaque .pontuacao { margin-bottom: 6px; font-size: 13px; }
+  .card-destaque:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--sombra-2);
+    border-color: var(--linha-forte);
+  }
+  .card-destaque .parceiro-nome { flex-basis: 100%; }
+
+  .card-destaque .pontuacao {
+    position: relative;
+    margin: var(--esp-2) calc(-1 * var(--pad-card)) 0 calc(-1 * var(--pad-card) - 4px);
+    padding: var(--esp-2) var(--pad-card) 0 calc(var(--pad-card) + 4px);
+    border-top: 2px dashed var(--linha);
+    margin-bottom: 10px;
+  }
+  /* Os dois furos do picote: círculos na cor do fundo da página, metade pra
+     fora do card (cortada pelo overflow), metade "mordendo" a borda. */
+  .card-destaque .pontuacao::before,
+  .card-destaque .pontuacao::after {
+    content: "";
+    position: absolute;
+    top: -11px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--fundo);
+    border: 1px solid var(--linha);
+  }
+  .card-destaque .pontuacao::before { left: -11px; }
+  .card-destaque .pontuacao::after { right: -11px; }
+
+  .card-destaque .pontuacao b { display: block; font-size: var(--t-xl); line-height: 1.15; }
+  .card-destaque .pontuacao .tag-condicionada { display: flex; width: fit-content; margin-bottom: 6px; }
   .card-destaque .categoria-badge { margin-bottom: 4px; }
+  .card-destaque .toggle-detalhes { display: flex; width: fit-content; }
+  /* No card estreito, a moldura dos detalhes dentro da moldura do card
+     aperta o texto à toa — aqui os detalhes correm soltos. */
+  .card-destaque .detalhes { padding: 0; border: 0; background: none; }
 
   .card-top {
     display: flex;
     align-items: center;
-    gap: 10px;
-    margin-bottom: 6px;
+    gap: 6px 8px;
+    margin-bottom: 8px;
     flex-wrap: wrap;
   }
 
   .parceiro-nome {
-    font-size: 17px;
+    font-size: var(--t-lg);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+    margin-right: 4px;
+  }
+  /* Rota de emissão (GRU → SCL): códigos IATA em fonte de bilhete. */
+  .parceiro-nome.rota {
+    font-family: var(--fonte-bilhete);
+    letter-spacing: 0.02em;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .parceiro-nome.rota .icone { color: var(--oceano); }
+
+  /* Família de etiquetas: mesma forma, cor muda o significado. */
+  .programa-tag,
+  .origem-tag,
+  .tag-promocao,
+  .tag-cupom,
+  .tag-condicionada,
+  .canal-tag,
+  .selo,
+  .saude-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: var(--t-xs);
     font-weight: 600;
+    line-height: 1.3;
+    padding: 4px 9px;
+    border-radius: var(--r-sm);
   }
 
   .programa-tag {
-    font-size: 11px;
+    font-family: var(--fonte-bilhete);
     text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--stone-700);
-    background: var(--stone-100);
-    padding: 2px 8px;
-    border-radius: 6px;
+    letter-spacing: 0.06em;
+    background: var(--noite);
+    color: #fff;
   }
 
-  .origem-tag {
-    font-size: 11px;
-    padding: 2px 8px;
-    border-radius: 6px;
-    font-weight: 500;
-  }
   .origem-COLETOR { background: var(--boa-bg); color: var(--boa); }
   .origem-MANUAL { background: var(--comum-bg); color: var(--comum); }
-  .origem-IMPORTACAO { background: var(--stone-100); color: var(--stone-700); }
+  .origem-IMPORTACAO { background: var(--fundo); color: var(--tinta-2); }
 
   .coletado-em {
-    font-size: 12px;
-    color: var(--stone-700);
-    margin-bottom: 8px;
-  }
-
-  .pontuacao {
-    font-size: 14px;
-    color: var(--stone-700);
+    font-size: var(--t-xs);
+    color: var(--tinta-2);
     margin-bottom: 10px;
   }
 
-  .pontuacao b { color: var(--ink); }
+  .pontuacao {
+    font-size: var(--t-sm);
+    color: var(--tinta-2);
+    margin-bottom: 10px;
+  }
+
+  /* O número é o que vende a oferta: fonte de bilhete, grande. */
+  .pontuacao b {
+    font-family: var(--fonte-bilhete);
+    font-size: var(--t-lg);
+    font-weight: 700;
+    color: var(--tinta);
+    letter-spacing: -0.02em;
+    margin-right: 2px;
+  }
 
   /* "Até X pontos" é teto anunciado, não valor garantido — precisa saltar aos
      olhos, porque são justamente essas ofertas que lideram o ranking. */
   .tag-condicionada {
-    font-size: 11px;
-    font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    padding: 2px 7px;
-    border-radius: 5px;
+    font-weight: 700;
     background: var(--pouco-bg);
     color: var(--pouco);
     border: 1px solid var(--pouco);
-    vertical-align: 1px;
+    cursor: help;
+    vertical-align: 2px;
   }
 
   .clube-extra { color: var(--boa); font-weight: 600; }
@@ -294,58 +575,60 @@
   /* Valor anterior da oferta. Discreto de propósito: contextualiza o número
      principal sem competir com ele. */
   .pontuacao-anterior {
-    font-size: 12px;
-    color: var(--stone-700);
+    font-size: var(--t-xs);
+    color: var(--tinta-2);
     font-style: italic;
   }
 
   /* Selo "Promoção" da própria Livelo. Fica junto das tags de origem e
      programa, não junto da nota — é metadado da oferta, não avaliação. */
   .tag-promocao {
-    font-size: 11px;
-    font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    padding: 2px 8px;
-    border-radius: 6px;
     background: var(--excelente-bg);
     color: var(--excelente);
     cursor: help;
   }
 
   .aviso-condicionada {
-    font-size: 12px;
-    line-height: 1.45;
+    font-size: var(--t-sm);
     color: var(--pouco);
     background: var(--pouco-bg);
     border-left: 3px solid var(--pouco);
-    padding: 7px 10px;
-    border-radius: 0 7px 7px 0;
-    margin: -4px 0 10px;
-    max-width: 58ch;
+    padding: 8px 12px;
+    border-radius: 0 var(--r-sm) var(--r-sm) 0;
+    margin: -2px 0 10px;
+    max-width: 62ch;
   }
 
   .categoria-badge {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    font-size: 12px;
-    font-weight: 600;
-    padding: 4px 10px;
-    border-radius: 8px;
+    font-size: var(--t-sm);
+    font-weight: 700;
+    padding: 5px 11px;
+    border-radius: var(--r-full);
     margin-bottom: 8px;
+    background: var(--comum-bg);
+    color: var(--comum);
   }
+  .cat-excepcional { background: var(--excepcional-bg); color: var(--excepcional); }
+  .cat-excelente { background: var(--excelente-bg); color: var(--excelente); }
+  .cat-boa { background: var(--boa-bg); color: var(--boa); }
+  .cat-comum { background: var(--comum-bg); color: var(--comum); }
+  .cat-pouco { background: var(--pouco-bg); color: var(--pouco); }
 
   .justificativa {
-    font-size: 13px;
-    color: var(--stone-700);
-    line-height: 1.5;
-    max-width: 60ch;
+    font-size: var(--t-sm);
+    color: var(--tinta-2);
+    line-height: 1.55;
+    max-width: 64ch;
   }
 
   .loading-inline {
-    font-size: 12px;
-    color: var(--stone-700);
+    font-size: var(--t-xs);
+    color: var(--tinta-2);
     font-style: italic;
   }
 
@@ -353,74 +636,82 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
-    min-width: 110px;
+    min-width: 124px;
   }
 
   button.acao {
+    min-height: 44px;
     border: none;
-    border-radius: 9px;
-    padding: 9px 14px;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
+    border-radius: var(--r-md);
+    padding: 0 18px;
+    font-size: var(--t-sm);
+    font-weight: 700;
     white-space: nowrap;
+    transition: background var(--rapido);
   }
 
-  .btn-aprovar {
-    background: var(--excelente);
-    color: white;
-  }
-  .btn-aprovar:hover { background: #3f6549; }
+  .btn-aprovar { background: var(--excelente); color: #fff; }
+  .btn-aprovar:hover { background: #124D31; }
 
   /* button.acao define border:none e tem especificidade maior que .btn-rejeitar
      sozinho — sem o seletor composto, a borda pretendida aqui não aparece. */
   button.acao.btn-rejeitar {
-    background: white;
+    background: var(--superficie);
     color: var(--pouco);
     border: 1px solid var(--pouco);
   }
   .btn-rejeitar:hover { background: var(--pouco-bg); }
 
   .status-pill {
-    font-size: 11px;
-    font-weight: 600;
+    font-size: var(--t-xs);
+    font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.03em;
-    padding: 5px 10px;
-    border-radius: 7px;
+    letter-spacing: 0.05em;
+    padding: 6px 12px;
+    border-radius: var(--r-full);
     text-align: center;
+    background: var(--fundo);
+    color: var(--tinta-2);
   }
   .status-APROVADA { background: var(--excelente-bg); color: var(--excelente); }
   .status-REJEITADA { background: var(--pouco-bg); color: var(--pouco); }
 
   .empty-state {
     text-align: center;
-    padding: 80px 20px;
-    color: var(--stone-700);
+    padding: clamp(3rem, 2rem + 6vw, 6rem) 20px;
+    color: var(--tinta-2);
   }
-
-  .empty-state .big { font-size: 40px; margin-bottom: 8px; }
+  .empty-state .big {
+    width: 72px;
+    height: 72px;
+    margin: 0 auto 14px;
+    border-radius: 50%;
+    background: var(--superficie);
+    box-shadow: var(--sombra-1);
+    display: grid;
+    place-items: center;
+    color: var(--oceano);
+  }
+  .empty-state .big .icone { width: 32px; height: 32px; }
 
   /* Prévia da mensagem como ela vai chegar no Telegram. Monoespaçada de
      propósito: é para conferir o texto, não para parecer bonito. */
   .previa {
-    background: var(--stone-900);
-    color: var(--stone-50);
-    border-radius: 10px;
+    background: var(--noite);
+    color: #EAF1F8;
+    border-radius: var(--r-md);
     padding: 14px 16px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 12px;
-    line-height: 1.55;
+    font-family: var(--fonte-bilhete);
+    font-weight: 500;
+    font-size: var(--t-sm);
+    line-height: 1.6;
     white-space: pre-wrap;
-    max-width: 62ch;
+    max-width: 64ch;
   }
 
   .canal-tag {
-    font-size: 11px;
-    font-weight: 700;
+    font-family: var(--fonte-bilhete);
     letter-spacing: 0.04em;
-    padding: 2px 8px;
-    border-radius: 6px;
     background: var(--boa-bg);
     color: var(--boa);
   }
@@ -428,219 +719,303 @@
   .aviso-config {
     background: var(--pouco-bg);
     color: var(--pouco);
-    border-left: 3px solid var(--pouco);
-    padding: 10px 14px;
-    border-radius: 0 8px 8px 0;
-    font-size: 13px;
-    line-height: 1.5;
-    margin-bottom: 16px;
+    border-left: 4px solid var(--pouco);
+    padding: 12px 16px;
+    border-radius: 0 var(--r-md) var(--r-md) 0;
+    font-size: var(--t-sm);
+    line-height: 1.55;
+    margin-bottom: var(--esp-2);
   }
 
   a.link-origem {
-    font-size: 12px;
-    color: var(--boa);
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    font-size: var(--t-sm);
+    font-weight: 600;
+    color: var(--oceano);
     text-decoration: none;
   }
-  a.link-origem:hover { text-decoration: underline; }
+  a.link-origem:hover { color: var(--oceano-forte); text-decoration: underline; }
 
   /* ---- Seleção múltipla ---- */
 
-  .card { grid-template-columns: auto 1fr auto; }
-  .card.sem-selecao { grid-template-columns: 1fr auto; }
-
-  .card-sel { padding-top: 2px; }
-  .card-sel input { width: 17px; height: 17px; cursor: pointer; accent-color: var(--stone-900); }
+  /* O rótulo inteiro (44px) marca a caixa — a caixa sozinha é alvo pequeno
+     demais pro dedo. */
+  .card-sel {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    margin: -10px -6px -10px -10px;
+    cursor: pointer;
+  }
+  .card-sel input { width: 20px; height: 20px; cursor: pointer; accent-color: var(--oceano); }
 
   .card.selecionado {
-    border-color: var(--stone-900);
-    box-shadow: 0 0 0 1px var(--stone-900);
+    border-color: var(--oceano);
+    box-shadow: 0 0 0 2px var(--oceano), var(--sombra-1);
   }
 
   .selecao-tudo {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
+    min-height: 44px;
     cursor: pointer;
     user-select: none;
+    font-weight: 600;
   }
-  .selecao-tudo input { width: 15px; height: 15px; cursor: pointer; accent-color: var(--stone-900); }
+  .selecao-tudo input { width: 20px; height: 20px; cursor: pointer; accent-color: var(--oceano); }
 
   /* O atributo `hidden` aplica display:none pela folha do navegador, que perde
-     para o `display: flex` acima. Sem esta regra, esconder o seletor não
-     funciona. */
+     para o `display` acima. Sem esta regra, esconder o seletor não funciona. */
   .selecao-tudo[hidden] { display: none; }
 
   .barra-lote {
     position: sticky;
-    bottom: 0;
-    margin-top: 16px;
-    background: var(--stone-900);
-    color: var(--stone-50);
-    border-radius: 12px;
-    padding: 14px 18px;
+    bottom: 14px;
+    z-index: 10;
+    margin-top: var(--esp-2);
+    background: var(--noite);
+    color: #fff;
+    border-radius: var(--r-lg);
+    padding: 12px 12px 12px 20px;
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
     flex-wrap: wrap;
-    box-shadow: 0 6px 24px rgba(0,0,0,0.18);
+    box-shadow: var(--sombra-2);
   }
   .barra-lote.oculta { display: none; }
-  .barra-lote .contagem { font-size: 14px; font-weight: 600; flex: 1; }
+  .barra-lote .contagem { font-size: var(--t-sm); font-weight: 700; flex: 1 1 160px; }
+  #acoes-lote { display: flex; gap: 8px; flex-wrap: wrap; }
   .barra-lote button {
+    min-height: 44px;
     border: none;
-    border-radius: 9px;
-    padding: 9px 16px;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
+    border-radius: var(--r-md);
+    padding: 0 16px;
+    font-size: var(--t-sm);
+    font-weight: 700;
   }
-  .barra-lote .lote-aprovar { background: var(--excelente); color: white; }
-  .barra-lote .lote-rejeitar { background: var(--pouco); color: white; }
+  .barra-lote .lote-aprovar { background: var(--excelente-forte); color: #06281A; }
+  .barra-lote .lote-rejeitar { background: #FFD9D1; color: #7A1F10; }
   .barra-lote .lote-limpar {
     background: transparent;
-    color: var(--stone-200);
-    border: 1px solid var(--stone-700);
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.5);
   }
 
   /* ---- Selos e painel de detalhes ---- */
 
   .selos { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0 4px; }
-  .selo {
-    font-size: 11px;
-    font-weight: 500;
-    padding: 3px 8px;
-    border-radius: 6px;
-    background: var(--comum-bg);
-    color: var(--comum);
-  }
+  .selo { background: var(--comum-bg); color: var(--comum); }
 
   /* Sem o cupom o cliente não pontua. É a única condição que zera o benefício,
      então fica na linha do nome do parceiro, com o código junto — quem bate o
      olho no card já sai sabendo o que precisa aplicar no carrinho. */
   .tag-cupom {
-    font-size: 11px;
+    font-family: var(--fonte-bilhete);
     font-weight: 700;
-    letter-spacing: 0.02em;
-    padding: 2px 8px;
-    border-radius: 6px;
     background: var(--excepcional-bg);
     color: var(--excepcional);
-    border: 1px solid var(--excepcional);
+    border: 1px dashed var(--excepcional);
     cursor: help;
   }
 
   /* Texto real da campanha, vindo da página de regras do parceiro. É onde a
      restrição aparece: o card da listagem nunca a menciona. */
   .regulamento-campanha {
-    font-size: 12.5px;
-    line-height: 1.5;
-    color: var(--stone-700);
-    background: var(--stone-50);
-    border: 1px solid var(--stone-100);
-    border-radius: 8px;
-    padding: 8px 11px;
+    font-size: var(--t-sm);
+    line-height: 1.55;
+    color: var(--tinta-2);
+    background: var(--superficie-2);
+    border: 1px solid var(--linha);
+    border-radius: var(--r-md);
+    padding: 10px 13px;
     margin: 0 0 10px;
-    max-width: 62ch;
+    max-width: 64ch;
   }
 
   .toggle-detalhes {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 44px;
+    margin-right: 12px;
     background: none;
     border: none;
-    padding: 6px 0 0;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--stone-700);
-    cursor: pointer;
+    padding: 0;
+    font-size: var(--t-sm);
+    font-weight: 700;
+    color: var(--oceano);
   }
-  .toggle-detalhes:hover { color: var(--ink); }
+  .toggle-detalhes:hover { color: var(--oceano-forte); }
+  /* Seta desenhada em CSS; gira quando o painel está aberto. */
+  .toggle-detalhes::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: rotate(-45deg);
+    transition: transform var(--rapido);
+  }
+  .toggle-detalhes[aria-expanded="true"]::before { transform: rotate(45deg) translate(-2px, -2px); }
 
   .detalhes {
-    margin-top: 10px;
-    padding: 14px 16px;
-    background: var(--stone-50);
-    border: 1px solid var(--stone-100);
-    border-radius: 10px;
+    margin-top: 6px;
+    padding: var(--esp-2);
+    background: var(--superficie-2);
+    border: 1px solid var(--linha);
+    border-radius: var(--r-md);
+    cursor: auto;
   }
   .detalhes.oculto { display: none; }
 
   .detalhes h4 {
     margin: 0 0 10px;
-    font-size: 11px;
+    font-size: var(--t-xs);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--stone-700);
-    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: var(--tinta-2);
+    font-weight: 700;
   }
-  .detalhes h4:not(:first-child) { margin-top: 18px; }
+  .detalhes h4:not(:first-child) { margin-top: 20px; }
 
   .criterio {
     display: grid;
-    grid-template-columns: 150px 1fr 42px;
+    grid-template-columns: minmax(96px, 150px) 1fr 36px;
     align-items: center;
     gap: 10px;
-    margin-bottom: 6px;
-    font-size: 12px;
+    margin-bottom: 7px;
+    font-size: var(--t-sm);
   }
-  .criterio-nome { color: var(--stone-700); }
-  .criterio-barra { background: var(--stone-100); border-radius: 4px; height: 7px; overflow: hidden; }
+  .criterio-nome { color: var(--tinta-2); }
+  .criterio-barra { background: var(--linha); border-radius: var(--r-full); height: 8px; overflow: hidden; }
   /* display:block — um <span> inline ignora width e a barra não aparece. */
-  .criterio-preenchida { display: block; background: var(--boa); height: 100%; border-radius: 4px; }
-  .criterio-valor { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .criterio-preenchida {
+    display: block;
+    height: 100%;
+    border-radius: var(--r-full);
+    background: linear-gradient(90deg, var(--oceano), var(--boa-forte));
+  }
+  .criterio-valor {
+    text-align: right;
+    font-family: var(--fonte-bilhete);
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+  }
 
-  .campo { font-size: 12.5px; line-height: 1.5; margin-bottom: 7px; }
-  .campo .rotulo { color: var(--stone-700); }
-  .campo .valor { color: var(--ink); }
-  .sem-dados { font-size: 12px; color: var(--stone-700); font-style: italic; }
+  .campo { font-size: var(--t-sm); line-height: 1.55; margin-bottom: 7px; }
+  .campo .rotulo { color: var(--tinta-2); }
+  .campo .valor { color: var(--tinta); }
+  .sem-dados { font-size: var(--t-sm); color: var(--tinta-2); font-style: italic; }
 
   /* ---- Painel de Saúde ---- */
 
-  .saude-badge {
-    font-size: 11px;
-    font-weight: 700;
-    padding: 3px 9px;
-    border-radius: 6px;
+  .saude-badge { font-weight: 700; }
+  /* A bolinha reforça a cor, mas a situação vem sempre escrita ao lado. */
+  .saude-badge::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: currentColor;
   }
   .saude-OK { background: var(--excelente-bg); color: var(--excelente); }
   .saude-FALHA { background: var(--pouco-bg); color: var(--pouco); }
-  .saude-ATRASADA { background: var(--comum-bg); color: var(--comum); }
-  .saude-NUNCA_RODOU { background: var(--stone-100); color: var(--stone-700); }
+  .saude-ATRASADA { background: var(--excepcional-bg); color: var(--excepcional); }
+  .saude-NUNCA_RODOU { background: var(--fundo); color: var(--tinta-2); }
+
+  .card:has(.saude-OK) { --faixa: var(--excelente-forte); }
+  .card:has(.saude-FALHA) { --faixa: var(--pouco-forte); }
+  .card:has(.saude-ATRASADA) { --faixa: var(--excepcional-forte); }
 
   /* ---- Emissões: comparativo lado a lado ---- */
 
-  .valor-emissao-data { font-size: 12px; color: var(--stone-700); margin-left: auto; }
+  .valor-emissao-data {
+    font-family: var(--fonte-bilhete);
+    font-size: var(--t-xs);
+    font-weight: 500;
+    color: var(--tinta-2);
+    margin-left: auto;
+  }
 
   .comparativo-emissao {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
     gap: 10px;
-    margin: 10px 0 6px;
+    margin: 10px 0 8px;
   }
   .opcao-emissao {
-    border: 1px solid var(--stone-200);
-    border-radius: 10px;
+    border: 1px solid var(--linha);
+    border-radius: var(--r-md);
     padding: 12px 14px;
-    background: var(--stone-50);
+    background: var(--superficie-2);
   }
-  .opcao-vazia { display: flex; flex-direction: column; justify-content: center; }
+  .opcao-vazia { display: flex; flex-direction: column; justify-content: center; border-style: dashed; }
   .opcao-rotulo {
-    font-size: 11px;
+    font-size: var(--t-xs);
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.03em;
-    color: var(--stone-700);
+    letter-spacing: 0.08em;
+    color: var(--tinta-2);
     margin-bottom: 6px;
   }
-  .opcao-preco { font-size: 19px; font-weight: 700; color: var(--ink); line-height: 1.25; }
-  .opcao-unidade { font-size: 12px; font-weight: 600; color: var(--stone-700); }
-  .opcao-detalhe { font-size: 12px; color: var(--stone-700); margin-top: 3px; }
-  .opcao-sem-oferta { font-size: 12.5px; color: var(--stone-700); font-style: italic; }
+  .opcao-preco {
+    font-family: var(--fonte-bilhete);
+    font-size: var(--t-lg);
+    font-weight: 700;
+    color: var(--tinta);
+    line-height: 1.25;
+  }
+  .opcao-unidade { font-family: var(--fonte); font-size: var(--t-xs); font-weight: 600; color: var(--tinta-2); }
+  .opcao-detalhe { font-size: var(--t-xs); color: var(--tinta-2); margin-top: 3px; }
+  .opcao-sem-oferta { font-size: var(--t-sm); color: var(--tinta-2); font-style: italic; }
+
+  /* ---- Tela estreita: as ações descem pra baixo do conteúdo ---- */
 
   @media (max-width: 640px) {
-    .comparativo-emissao { grid-template-columns: 1fr; }
+    .card { grid-template-columns: auto 1fr; }
+    .card.sem-selecao, .card-destaque { grid-template-columns: 1fr; }
+    .actions { grid-column: 1 / -1; flex-direction: row; min-width: 0; }
+    .actions > * { flex: 1; }
+    .valor-emissao-data { margin-left: 0; flex-basis: 100%; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation: none !important;
+      transition: none !important;
+    }
+    .card-destaque:hover { transform: none; }
   }
 </style>
 </head>
 <body>
+
+<!-- Ícones (traço, 24×24) usados pelo painel inteiro via <use> — um lugar só
+     pra trocar, no lugar dos emojis que variavam de sistema pra sistema. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-aviao" viewBox="0 0 24 24"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.800 6.200c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.300L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.500 5.300c.3.4.8.5 1.300.3l.5-.2c.4-.3.6-.7.5-1.200z"/></symbol>
+  <symbol id="i-chama" viewBox="0 0 24 24"><path d="M8.500 14.500A2.500 2.500 0 0 0 11 12c0-1.380-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.500 2 4.900 4 6.500 2 1.600 3 3.500 3 5.500a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.500 2.500 0 0 0 2.500 2.500z"/></symbol>
+  <symbol id="i-estrela" viewBox="0 0 24 24"><polygon points="12 2 15.090 8.260 22 9.270 17 14.140 18.180 21.020 12 17.770 5.820 21.020 7 14.140 2 9.270 8.910 8.260 12 2"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-menos" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-bilhete" viewBox="0 0 24 24"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2M13 17v2M13 11v2"/></symbol>
+  <symbol id="i-calendario" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></symbol>
+  <symbol id="i-loja" viewBox="0 0 24 24"><path d="m3 9 1-5h16l1 5M4 9v11h16V9M9 20v-6h6v6"/></symbol>
+  <symbol id="i-etiqueta" viewBox="0 0 24 24"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.420 0l6.580-6.580a2.426 2.426 0 0 0 0-3.420z"/><path d="M7.500 7.500h.01"/></symbol>
+  <symbol id="i-cadeado" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+  <symbol id="i-alerta" viewBox="0 0 24 24"><path d="m21.730 18-8-14a2 2 0 0 0-3.480 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.730-3"/><path d="M12 9v4M12 17h.01"/></symbol>
+  <symbol id="i-atualizar" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.750 9.750 0 0 1 6.740 2.740L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.750 9.750 0 0 1-6.740-2.740L3 16"/><path d="M8 16H3v5"/></symbol>
+  <symbol id="i-bussola" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polygon points="16.240 7.760 14.120 14.120 7.760 16.240 9.880 9.880 16.240 7.760"/></symbol>
+  <symbol id="i-concluido" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="i-enviar" viewBox="0 0 24 24"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4z"/></symbol>
+  <symbol id="i-nuvem-off" viewBox="0 0 24 24"><path d="m2 2 20 20"/><path d="M5.782 5.782A7 7 0 0 0 9 19h8.500a4.500 4.500 0 0 0 1.307-.193"/><path d="M21.532 16.500A4.500 4.500 0 0 0 17.500 10h-1.790A7.008 7.008 0 0 0 10 5.070"/></symbol>
+</svg>
 
 <div class="login-overlay" id="login-overlay" hidden>
   <div class="login-card">
@@ -652,41 +1027,52 @@
       <label for="login-senha">Senha</label>
       <input type="password" id="login-senha" required autocomplete="current-password">
       <button type="submit">Entrar</button>
-      <div class="login-erro" id="login-erro"></div>
+      <div class="login-erro" id="login-erro" role="alert"></div>
     </form>
   </div>
 </div>
 
 <header>
-  <div>
-    <div class="brand">Garimpo <span class="accent">Promoções</span></div>
-    <div class="subtitle">Painel de revisão do Motor de Análise V1</div>
+  <svg class="rota-decorativa" viewBox="0 0 520 160" preserveAspectRatio="xMaxYMid meet" aria-hidden="true">
+    <path d="M10 130 Q 260 -40 500 70" fill="none" stroke="#fff" stroke-width="1.5" stroke-dasharray="3 9" stroke-linecap="round"/>
+    <circle cx="10" cy="130" r="4" fill="#fff"/>
+    <circle cx="500" cy="70" r="4" fill="#FFB36B"/>
+    <path fill="#fff" transform="translate(262 22) rotate(98) scale(1.25)" d="M21 16v-2l-8-5V3.500a1.500 1.500 0 0 0-3 0V9l-8 5v2l8-2.500V19l-2 1.500V22l3.500-1 3.500 1v-1.500L13 19v-5.500z"/>
+  </svg>
+  <div class="topo-barra">
+    <div class="marca">
+      <div class="marca-selo" aria-hidden="true"><svg class="icone"><use href="#i-aviao"/></svg></div>
+      <div>
+        <div class="brand">Garimpo <span class="accent">Promoções</span></div>
+        <div class="subtitle">Painel de revisão do Motor de Análise V1</div>
+      </div>
+    </div>
+    <div class="usuario-logado" id="usuario-logado" hidden>
+      <span id="usuario-nome"></span>
+      <button onclick="sair()">Sair</button>
+    </div>
   </div>
-  <div class="tabs">
-    <div class="tab active" data-filtro="__DESTAQUES__">Destaques</div>
-    <div class="tab" data-filtro="PENDENTE">Pendentes</div>
-    <div class="tab" data-filtro="APROVADA">Aprovadas</div>
-    <div class="tab" data-filtro="REJEITADA">Rejeitadas</div>
-    <div class="tab" data-filtro="">Todas</div>
-    <div class="tab" data-filtro="__PUBLICAR__">Publicar</div>
-    <div class="tab" data-filtro="__SAUDE__">Saúde</div>
-    <div class="tab" data-filtro="__EMISSOES__">Emissões</div>
-  </div>
-  <div class="usuario-logado" id="usuario-logado" hidden>
-    <span id="usuario-nome"></span>
-    <button onclick="sair()">Sair</button>
-  </div>
+  <nav class="tabs" aria-label="Seções do painel">
+    <button class="tab active" data-filtro="__DESTAQUES__" aria-current="page">Destaques</button>
+    <button class="tab" data-filtro="PENDENTE">Pendentes</button>
+    <button class="tab" data-filtro="APROVADA">Aprovadas</button>
+    <button class="tab" data-filtro="REJEITADA">Rejeitadas</button>
+    <button class="tab" data-filtro="">Todas</button>
+    <button class="tab" data-filtro="__PUBLICAR__">Publicar</button>
+    <button class="tab" data-filtro="__SAUDE__">Saúde</button>
+    <button class="tab" data-filtro="__EMISSOES__">Emissões</button>
+  </nav>
 </header>
 
 <main>
   <div class="status-line">
-    <span id="contador">Carregando…</span>
+    <span id="contador" role="status">Carregando…</span>
     <label class="selecao-tudo" id="wrap-selecao-tudo" hidden>
       <input type="checkbox" id="selecionar-tudo" onchange="alternarTodas(this.checked)">
       <span id="label-selecao-tudo">Selecionar todas</span>
     </label>
-    <button id="btn-atualizar" onclick="carregar()">↻ Atualizar</button>
-    <button id="btn-reprocessar" onclick="reprocessarTodas()">⚙ Reprocessar tudo</button>
+    <button id="btn-atualizar" onclick="carregar()"><svg class="icone" aria-hidden="true"><use href="#i-atualizar"/></svg>Atualizar</button>
+    <button id="btn-reprocessar" onclick="reprocessarTodas()"><svg class="icone" aria-hidden="true"><use href="#i-atualizar"/></svg>Reprocessar tudo</button>
   </div>
   <div id="lista"></div>
 
@@ -770,13 +1156,40 @@ async function iniciar() {
 const API_BASE = "/api/v1/promocoes";
 let filtroAtual = "__DESTAQUES__";
 
+// Ícone do sprite SVG no topo do <body>. Sempre decorativo: o texto ao lado
+// é quem informa, então fica fora da árvore de acessibilidade.
+function icone(nome) {
+  return `<svg class="icone" aria-hidden="true"><use href="#i-${nome}"/></svg>`;
+}
+
 const CATEGORIA_INFO = {
-  EXCEPCIONAL:     { label: "🔥 Excepcional",     cor: "excepcional" },
-  EXCELENTE:       { label: "⭐ Excelente",        cor: "excelente" },
-  BOA:             { label: "👍 Boa",              cor: "boa" },
-  COMUM:           { label: "⚠️ Comum",            cor: "comum" },
-  POUCO_ATRATIVA:  { label: "❌ Pouco atrativa",   cor: "pouco" },
+  EXCEPCIONAL:     { label: "Excepcional",     cor: "excepcional", icone: "chama" },
+  EXCELENTE:       { label: "Excelente",       cor: "excelente",   icone: "estrela" },
+  BOA:             { label: "Boa",             cor: "boa",         icone: "check" },
+  COMUM:           { label: "Comum",           cor: "comum",       icone: "menos" },
+  POUCO_ATRATIVA:  { label: "Pouco atrativa",  cor: "pouco",       icone: "x" },
 };
+
+function renderBadgeCategoria(c) {
+  const info = CATEGORIA_INFO[c.categoria] || { label: c.categoria, cor: "comum", icone: "menos" };
+  return `
+    <div class="categoria-badge cat-${info.cor}">
+      ${icone(info.icone)}${esc(info.label)} · nota ${Number(c.nota).toFixed(0)}
+    </div>`;
+}
+
+function estadoVazio(nomeIcone, texto) {
+  return `<div class="empty-state"><div class="big">${icone(nomeIcone)}</div>${texto}</div>`;
+}
+
+// Falha de rede ou backend fora do ar. Preenche a lista de propósito: vazia,
+// ela ficaria mostrando a animação de carregamento pra sempre.
+function mostrarErroDeCarga(texto = "Não foi possível carregar.") {
+  document.getElementById("contador").textContent = texto;
+  document.getElementById("lista").innerHTML =
+    estadoVazio("nuvem-off", "Sem resposta do servidor. Confira a conexão e toque em Atualizar.");
+  document.getElementById("btn-atualizar").hidden = false;
+}
 
 const STATUS_LABEL = {
   PENDENTE: "Pendente", APROVADA: "Aprovada", REJEITADA: "Rejeitada", PUBLICADA: "Publicada",
@@ -788,8 +1201,14 @@ const promocoesCache = {};
 
 document.querySelectorAll(".tab").forEach(tab => {
   tab.addEventListener("click", () => {
-    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    document.querySelectorAll(".tab").forEach(t => {
+      t.classList.remove("active");
+      t.removeAttribute("aria-current");
+    });
     tab.classList.add("active");
+    tab.setAttribute("aria-current", "page");
+    // No celular a barra de abas rola de lado: a aba escolhida vem pro centro.
+    tab.scrollIntoView({ inline: "center", block: "nearest" });
     filtroAtual = tab.dataset.filtro;
     carregar();
   });
@@ -829,25 +1248,28 @@ async function carregar() {
     const resp = await fetch(url);
     promocoes = await resp.json();
   } catch (e) {
-    contador.textContent = "Erro ao carregar. A API está rodando em localhost:8000?";
+    mostrarErroDeCarga();
     return;
   }
 
+  // Nenhum dos dois faz sentido em Destaques: reprocessar reclassifica pelo
+  // motor (isso é curadoria, não vitrine), e atualizar é redundante — a
+  // aba já busca dado fresco a cada vez que é aberta (pedido do usuário,
+  // 18/09: "isso tem que ser feito toda vez que entrar nesse menu"). Vem
+  // antes do retorno de lista vazia: senão, saindo de Destaques pra uma aba
+  // sem nada, os botões continuavam escondidos.
+  document.getElementById("btn-reprocessar").hidden = (filtroAtual === "__DESTAQUES__");
+  document.getElementById("btn-atualizar").hidden = (filtroAtual === "__DESTAQUES__");
+
   if (promocoes.length === 0) {
     contador.textContent = "0 promoções";
-    lista.innerHTML = `<div class="empty-state"><div class="big">🔍</div>Nada por aqui ainda.</div>`;
+    lista.innerHTML = estadoVazio("bussola", "Nada por aqui ainda.");
     document.getElementById("wrap-selecao-tudo").hidden = true;
     return;
   }
 
   contador.textContent = `${promocoes.length} promoç${promocoes.length === 1 ? "ão" : "ões"}, ordenadas pela nota`;
 
-  // Nenhum dos dois faz sentido em Destaques: reprocessar reclassifica pelo
-  // motor (isso é curadoria, não vitrine), e atualizar é redundante — a
-  // aba já busca dado fresco a cada vez que é aberta (pedido do usuário,
-  // 18/09: "isso tem que ser feito toda vez que entrar nesse menu").
-  document.getElementById("btn-reprocessar").hidden = (filtroAtual === "__DESTAQUES__");
-  document.getElementById("btn-atualizar").hidden = (filtroAtual === "__DESTAQUES__");
   document.getElementById("acoes-lote").innerHTML = `
     <button class="lote-limpar" onclick="limparSelecao()">Limpar</button>
     <button class="lote-rejeitar" onclick="rejeitarLote()">Rejeitar selecionadas</button>
@@ -878,23 +1300,23 @@ async function carregar() {
     card.className = selecionavel ? "card" : "card sem-selecao";
     card.innerHTML = `
       ${selecionavel ? `
-      <div class="card-sel">
-        <input type="checkbox" data-id="${p.id}" onchange="alternarUma('${p.id}', this.checked)">
-      </div>` : ""}
+      <label class="card-sel">
+        <input type="checkbox" data-id="${p.id}" aria-label="Selecionar ${esc(p.parceiro_nome)}" onchange="alternarUma('${p.id}', this.checked)">
+      </label>` : ""}
       <div class="card-main">
         <div class="card-top">
           <span class="parceiro-nome">${esc(p.parceiro_nome)}</span>
           <span class="programa-tag">${esc(p.programa_nome)}</span>
           <span class="origem-tag origem-${esc(p.origem)}">${esc(formatOrigem(p))}</span>
           ${p.em_promocao ? '<span class="tag-promocao" title="A Livelo marca esta oferta como campanha ativa — ela é temporária. Mede coisa diferente da nota: a nota diz se a oferta é boa, este selo diz que ela vai expirar.">Promoção</span>' : ""}
-          ${p.requer_cupom ? `<span class="tag-cupom" title="Sem aplicar este cupom no carrinho, o cliente não pontua. É a única condição que zera o benefício.">🎫 Cupom${p.cupom ? " " + esc(p.cupom) : ""}</span>` : ""}
+          ${p.requer_cupom ? `<span class="tag-cupom" title="Sem aplicar este cupom no carrinho, o cliente não pontua. É a única condição que zera o benefício.">${icone("bilhete")}Cupom${p.cupom ? " " + esc(p.cupom) : ""}</span>` : ""}
         </div>
         ${renderPontuacao(p)}
         ${renderRegulamento(p)}
         <div class="coletado-em">Coletado em ${formatData(p.created_at)}</div>
         ${renderClassificacao(p)}
         ${renderSelos(p)}
-        <button class="toggle-detalhes" onclick="alternarDetalhes('${p.id}')" id="btn-det-${p.id}">▸ Ver detalhes</button>
+        <button class="toggle-detalhes" onclick="alternarDetalhes('${p.id}')" id="btn-det-${p.id}" aria-expanded="false" aria-controls="det-${p.id}">Ver detalhes</button>
         <div class="detalhes oculto" id="det-${p.id}">${renderDetalhes(p)}</div>
         <a class="link-origem" href="${esc(p.url_origem)}" target="_blank">Ver oferta original ↗</a>
       </div>
@@ -925,7 +1347,7 @@ async function carregarFila() {
   try {
     dados = await (await fetch("/api/v1/publicacoes/fila")).json();
   } catch (e) {
-    contador.textContent = "Erro ao carregar a fila.";
+    mostrarErroDeCarga("Não foi possível carregar a fila.");
     return;
   }
 
@@ -961,7 +1383,7 @@ async function carregarFila() {
         <b>${aviso.quantidade} aprovação(ões) individual(is) aconteceram depois da última reclassificação geral.</b><br>
         A nota de outras promoções pode não refletir essas aprovações ainda.
         <div style="margin-top:8px">
-          <button onclick="reprocessarTodas()">🔁 Reprocessar tudo agora</button>
+          <button onclick="reprocessarTodas()">${icone("atualizar")}Reprocessar tudo agora</button>
         </div>
       `;
       lista.appendChild(bloco);
@@ -969,7 +1391,7 @@ async function carregarFila() {
   } catch (e) { /* o aviso não pode impedir a fila de aparecer */ }
 
   if (dados.total === 0) {
-    lista.innerHTML = `<div class="empty-state"><div class="big">✅</div>Nada na fila. Aprove promoções para que apareçam aqui.</div>`;
+    lista.innerHTML = estadoVazio("concluido", "Nada na fila. Aprove promoções para que apareçam aqui.");
     return;
   }
 
@@ -977,7 +1399,7 @@ async function carregarFila() {
   const barra = document.createElement("div");
   barra.className = "status-line";
   barra.innerHTML = `
-    <button onclick="testarConfiguracao()">🔌 Testar configuração</button>
+    <button onclick="testarConfiguracao()">${icone("enviar")}Testar configuração</button>
     <label class="selecao-tudo">
       <input type="checkbox" onchange="alternarTodasFila(this.checked)">
       <span>Selecionar todas (${dados.total})</span>
@@ -991,10 +1413,10 @@ async function carregarFila() {
     card.className = "card";
     card.id = `fila-${chave}`;
     card.innerHTML = `
-      <div class="card-sel">
-        <input type="checkbox" data-chave="${esc(chave)}"
+      <label class="card-sel">
+        <input type="checkbox" data-chave="${esc(chave)}" aria-label="Selecionar ${esc(item.parceiro)}"
                onchange="alternarUmaFila('${esc(chave)}', this.checked)">
-      </div>
+      </label>
       <div class="card-main">
         <div class="card-top">
           <span class="parceiro-nome">${esc(item.parceiro)}</span>
@@ -1062,10 +1484,10 @@ const JOB_LABEL = {
 };
 
 const SITUACAO_LABEL = {
-  OK: "🟢 OK",
-  FALHA: "🔴 Falhou",
-  ATRASADA: "🟡 Atrasada",
-  NUNCA_RODOU: "⚪ Nunca rodou",
+  OK: "OK",
+  FALHA: "Falhou",
+  ATRASADA: "Atrasada",
+  NUNCA_RODOU: "Nunca rodou",
 };
 
 async function carregarSaude() {
@@ -1081,7 +1503,7 @@ async function carregarSaude() {
   try {
     dados = await (await fetch("/api/v1/saude")).json();
   } catch (e) {
-    contador.textContent = "Erro ao carregar. A API está rodando em localhost:8000?";
+    mostrarErroDeCarga();
     return;
   }
 
@@ -1188,13 +1610,13 @@ async function carregarEmissoes() {
   try {
     ofertas = await (await fetch("/api/v1/emissoes/ofertas")).json();
   } catch (e) {
-    contador.textContent = "Erro ao carregar. A API está rodando em localhost:8000?";
+    mostrarErroDeCarga();
     return;
   }
 
   if (ofertas.length === 0) {
     contador.textContent = "0 rotas com oferta ainda";
-    lista.innerHTML = `<div class="empty-state"><div class="big">✈️</div>Nenhuma oferta coletada ainda.</div>`;
+    lista.innerHTML = estadoVazio("aviao", "Nenhuma oferta coletada ainda.");
     return;
   }
 
@@ -1214,7 +1636,7 @@ async function carregarEmissoes() {
     card.innerHTML = `
       <div class="card-main">
         <div class="card-top">
-          <span class="parceiro-nome">${esc(rota.origem)} → ${esc(rota.destino)}</span>
+          <span class="parceiro-nome rota">${esc(rota.origem)} ${icone("aviao")} ${esc(rota.destino)}</span>
           <span class="programa-tag">${esc(rota.programa_nome)}</span>
           <span class="valor-emissao-data">${formatDataVoo(referencia.data_ida)} · ${esc(referencia.classe)}</span>
         </div>
@@ -1295,12 +1717,12 @@ function renderPontuacao(p, opcoes = {}) {
   // que dá apelo à publicação. O qualificador vem colado nele, nunca escondido:
   // a Beleza na Web anuncia "até 8" e paga 4 na maior parte da loja.
   const clube = p.pontuacao_clube
-    ? ` <span class="clube-extra">· ${esc(p.pontuacao_clube)} no Clube</span>`
+    ? ` <span class="clube-extra">· ${formatPontos(p.pontuacao_clube)} no Clube</span>`
     : "";
 
   // O salto é o que faz a notícia: de 1 para 100 é relevante, de 2 para 3 não.
   const anterior = p.pontuacao_anterior
-    ? ` <span class="pontuacao-anterior">eram ${esc(p.pontuacao_anterior)}</span>`
+    ? ` <span class="pontuacao-anterior">eram ${formatPontos(p.pontuacao_anterior)}</span>`
     : "";
 
   // No card resumido de Destaques (`comAviso: false`) só a tag basta — o
@@ -1315,8 +1737,8 @@ function renderPontuacao(p, opcoes = {}) {
 
   return `
     <div class="pontuacao">
-      ${p.valor_condicionado ? '<span class="tag-condicionada" title="O valor exibido não vale para a compra inteira: ou o card anuncia &quot;Até&quot;, ou o regulamento cita uma pontuação menor para o restante da loja.">⚠ condicionada</span> ' : ""}
-      <b>${esc(p.pontuacao)}</b> ${esc(formatUnidade(p.unidade_pontuacao))}${clube}${anterior}
+      ${p.valor_condicionado ? `<span class="tag-condicionada" title="O valor exibido não vale para a compra inteira: ou o card anuncia &quot;Até&quot;, ou o regulamento cita uma pontuação menor para o restante da loja.">${icone("alerta")}condicionada</span> ` : ""}
+      <b>${formatPontos(p.pontuacao)}</b> ${esc(formatUnidade(p.unidade_pontuacao))}${clube}${anterior}
     </div>
     ${aviso}`;
 }
@@ -1326,25 +1748,23 @@ function renderPontuacao(p, opcoes = {}) {
 // nota. O resto (regulamento, justificativa, selos, link) mora atrás de um
 // clique no card inteiro, reaproveitando o mesmo `det-${id}`/`alternarDetalhes`
 // dos outros cards — é a mesma seção de detalhes, só que escondida por padrão
-// aqui e visível de cara nas outras abas.
+// aqui e visível de cara nas outras abas. O "Ver detalhes" é um <button> sem
+// onclick próprio: o clique borbulha até o card (que é quem alterna), e o
+// botão existe pra dar foco e Enter/Espaço a quem navega por teclado.
 function renderCardDestaque(p) {
   const c = p.classificacao_ativa;
-  const info = c ? (CATEGORIA_INFO[c.categoria] || { label: c.categoria, cor: "comum" }) : null;
-  const nota = info ? `
-    <div class="categoria-badge" style="background: var(--${info.cor}-bg); color: var(--${info.cor});">
-      ${info.label} · nota ${Number(c.nota).toFixed(0)}
-    </div>` : "";
+  const nota = c ? renderBadgeCategoria(c) : "";
 
   return `
     <div class="card-main">
       <div class="card-top">
         <span class="parceiro-nome">${esc(p.parceiro_nome)}</span>
         <span class="programa-tag">${esc(p.programa_nome)}</span>
-        ${p.requer_cupom ? `<span class="tag-cupom" title="Sem aplicar este cupom no carrinho, o cliente não pontua.">🎫 Cupom${p.cupom ? " " + esc(p.cupom) : ""}</span>` : ""}
+        ${p.requer_cupom ? `<span class="tag-cupom" title="Sem aplicar este cupom no carrinho, o cliente não pontua.">${icone("bilhete")}Cupom${p.cupom ? " " + esc(p.cupom) : ""}</span>` : ""}
       </div>
       ${renderPontuacao(p, { comAviso: false })}
       ${nota}
-      <div class="toggle-detalhes" id="btn-det-${p.id}">▸ Ver detalhes</div>
+      <button class="toggle-detalhes" id="btn-det-${p.id}" aria-expanded="false" aria-controls="det-${p.id}">Ver detalhes</button>
       <div class="detalhes oculto" id="det-${p.id}" onclick="event.stopPropagation()">
         ${renderRegulamento(p)}
         ${c ? `<div class="justificativa">${esc(c.justificativa)}</div>` : ""}
@@ -1358,11 +1778,8 @@ function renderCardDestaque(p) {
 function renderClassificacao(p) {
   const c = p.classificacao_ativa;
   if (!c) return `<span class="loading-inline">Sem classificação ainda.</span>`;
-  const info = CATEGORIA_INFO[c.categoria] || { label: c.categoria, cor: "comum" };
   return `
-    <div class="categoria-badge" style="background: var(--${info.cor}-bg); color: var(--${info.cor});">
-      ${info.label} · nota ${Number(c.nota).toFixed(0)}
-    </div>
+    ${renderBadgeCategoria(c)}
     <div class="justificativa">${esc(c.justificativa)}</div>
   `;
 }
@@ -1391,20 +1808,20 @@ function renderSelos(p) {
   // parceiro, porque é a condição que zera o benefício se ignorada e precisa
   // ser vista antes de qualquer outra coisa do card.
   if (p.data_fim) {
-    selos.push(`<span class="selo">🗓 Válida até ${formatDataCurta(p.data_fim)}</span>`);
+    selos.push(`<span class="selo">${icone("calendario")}Válida até ${formatDataCurta(p.data_fim)}</span>`);
   }
   // Onde a compra é feita muda quanto se pontua, e o cliente costuma descobrir
   // tarde demais. Só aparece quando o regulamento afirma — nunca por dedução.
   if (p.marketplace_status === "PROIBIDO") {
-    selos.push(`<span class="selo selo-marketplace">🏪 Só vendido e entregue pela loja</span>`);
+    selos.push(`<span class="selo selo-marketplace">${icone("loja")}Só vendido e entregue pela loja</span>`);
   } else if (p.marketplace_status === "PARCIAL") {
-    selos.push(`<span class="selo selo-marketplace">🏪 Marketplace pontua menos</span>`);
+    selos.push(`<span class="selo selo-marketplace">${icone("loja")}Marketplace pontua menos</span>`);
   }
   if (p.requer_clube) {
-    selos.push(`<span class="selo">🏷 Exige Clube${p.qual_clube ? ": " + esc(p.qual_clube) : ""}</span>`);
+    selos.push(`<span class="selo">${icone("etiqueta")}Exige Clube${p.qual_clube ? ": " + esc(p.qual_clube) : ""}</span>`);
   }
   if (p.disponibilidade && p.disponibilidade !== "PUBLICA") {
-    selos.push(`<span class="selo">🔒 ${esc(p.disponibilidade)}</span>`);
+    selos.push(`<span class="selo">${icone("cadeado")}${esc(p.disponibilidade)}</span>`);
   }
 
   if (selos.length === 0) return "";
@@ -1498,7 +1915,8 @@ function alternarDetalhes(id) {
   const botao = document.getElementById(`btn-det-${id}`);
   const abrindo = painel.classList.contains("oculto");
   painel.classList.toggle("oculto");
-  botao.textContent = abrindo ? "▾ Ocultar detalhes" : "▸ Ver detalhes";
+  botao.textContent = abrindo ? "Ocultar detalhes" : "Ver detalhes";
+  botao.setAttribute("aria-expanded", String(abrindo));
 
   if (abrindo && !historicoCarregado.has(id)) {
     historicoCarregado.add(id);
@@ -1642,6 +2060,15 @@ async function rejeitarLote() {
   enviarLote("rejeitar-lote", { ids, motivo_rejeicao: motivo || "Rejeição em lote" }, "rejeitadas");
 }
 
+// A API devolve decimal cru ("30.00", "20000.00"). Na tela vira número
+// brasileiro — "30", "20.000", "7,5" — sem arredondar nada: só some o zero
+// à direita. Valor que não for número passa como veio.
+function formatPontos(valor) {
+  const n = Number(valor);
+  if (valor === null || valor === "" || Number.isNaN(n)) return esc(valor);
+  return n.toLocaleString("pt-BR", { maximumFractionDigits: 4 });
+}
+
 function formatUnidade(unidade) {
   if (unidade === "pontos_por_real") return "pontos por R$ 1";
   if (unidade === "pontos_por_dolar") return "pontos por U$ 1";
@@ -1649,9 +2076,9 @@ function formatUnidade(unidade) {
 }
 
 function formatOrigem(p) {
-  if (p.origem === "COLETOR") return "📥 " + (p.origem_detalhe || "Coletor");
-  if (p.origem === "MANUAL") return "✍️ Manual";
-  if (p.origem === "IMPORTACAO") return "📄 Importação";
+  if (p.origem === "COLETOR") return p.origem_detalhe || "Coletor";
+  if (p.origem === "MANUAL") return "Manual";
+  if (p.origem === "IMPORTACAO") return "Importação";
   return p.origem;
 }
 
