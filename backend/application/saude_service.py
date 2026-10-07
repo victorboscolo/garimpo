@@ -130,18 +130,17 @@ async def obter_saude(db) -> list[dict]:
     job que nunca rodou nenhuma vez ainda apareça no painel como NUNCA_RODOU,
     em vez de simplesmente não aparecer.
     """
-    from sqlalchemy import select
+    from sqlalchemy import func, select
 
     from domain.governanca import Execucao
 
-    resultado = []
-    for job in JANELA_POR_JOB:
-        stmt = (
-            select(Execucao)
-            .filter_by(job=job)
-            .order_by(Execucao.codigo.desc())
-            .limit(1)
-        )
-        ultima = (await db.execute(stmt)).scalars().first()
-        resultado.append(avaliar_saude(job, ultima))
+    # Uma consulta só pra todos os jobs (antes era uma por job, em fila —
+    # com o banco em outro continente, cada uma custa uma ida e volta).
+    ultimos_codigos = select(func.max(Execucao.codigo)).group_by(Execucao.job)
+    execucoes = (await db.execute(
+        select(Execucao).filter(Execucao.codigo.in_(ultimos_codigos))
+    )).scalars().all()
+    ultima_por_job = {execucao.job: execucao for execucao in execucoes}
+
+    resultado = [avaliar_saude(job, ultima_por_job.get(job)) for job in JANELA_POR_JOB]
     return resultado

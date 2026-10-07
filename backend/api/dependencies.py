@@ -18,6 +18,7 @@ validou, para as rotas que precisam saber *quem* aprovou algo — devolve
 usuário.
 """
 import os
+import time
 
 from fastapi import Cookie, Depends, Header, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,6 +26,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from application import auth_service
 from domain.governanca import Usuario
 from infrastructure.db.session import get_db
+
+
+# Cada clique no painel refazia `SELECT usuarios` só pra confirmar quem já
+# estava logado — uma ida e volta ao banco a mais por requisição, cara com o
+# banco em outro continente (ver infrastructure/db/session.py). O usuário
+# validado fica guardado por este tempo; o preço é que desativar alguém leva
+# até um minuto pra valer, aceitável com 1-2 contas no painel.
+_SEGUNDOS_CACHE_USUARIO = 60
+_usuarios_validados: dict = {}
+
+
+async def _usuario_ativo(db: AsyncSession, usuario_id) -> Usuario | None:
+    guardado = _usuarios_validados.get(usuario_id)
+    if guardado is not None and guardado[0] > time.monotonic():
+        return guardado[1]
+    usuario = await db.get(Usuario, usuario_id)
+    if usuario is None or not usuario.ativo:
+        _usuarios_validados.pop(usuario_id, None)
+        return None
+    _usuarios_validados[usuario_id] = (time.monotonic() + _SEGUNDOS_CACHE_USUARIO, usuario)
+    return usuario
 
 
 async def exigir_acesso(
@@ -41,8 +63,8 @@ async def exigir_acesso(
     if garimpo_token:
         usuario_id = auth_service.decodificar_token(garimpo_token)
         if usuario_id is not None:
-            usuario = await db.get(Usuario, usuario_id)
-            if usuario is not None and usuario.ativo:
+            usuario = await _usuario_ativo(db, usuario_id)
+            if usuario is not None:
                 request.state.usuario = usuario
                 return
 

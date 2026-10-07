@@ -1055,9 +1055,11 @@
   <nav class="tabs" aria-label="Seções do painel">
     <button class="tab active" data-filtro="__DESTAQUES__" aria-current="page">Destaques</button>
     <button class="tab" data-filtro="PENDENTE">Pendentes</button>
-    <button class="tab" data-filtro="APROVADA">Aprovadas</button>
+    <!-- Aprovadas e Todas saíram da tela em 07/10 (decisão do usuário): eram
+         histórico interno, sem nenhuma ação possível, e cada abertura trazia
+         as ~1.270 promoções inteiras (2,4 MB). Os dados seguem no banco e a
+         rota GET /promocoes continua servindo o histórico do parceiro. -->
     <button class="tab" data-filtro="REJEITADA">Rejeitadas</button>
-    <button class="tab" data-filtro="">Todas</button>
     <button class="tab" data-filtro="__PUBLICAR__">Publicar</button>
     <button class="tab" data-filtro="__SAUDE__">Saúde</button>
     <button class="tab" data-filtro="__EMISSOES__">Emissões</button>
