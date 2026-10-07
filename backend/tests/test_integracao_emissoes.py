@@ -87,3 +87,47 @@ async def test_lista_rotas_filtra_por_programa(client, db):
 
     assert resposta.status_code == 200
     assert resposta.json() == []
+
+
+async def _oferta(client, origem, destino):
+    return await client.post("/api/v1/emissoes/ofertas", json={
+        "programa_nome": "Azul", "origem": origem, "destino": destino,
+        "data_ida": "2026-11-15", "classe": "ECONOMY", "pontos": 85000, "paradas": 0,
+    })
+
+
+async def test_definir_rotas_ativas_desativa_as_outras_e_esconde_as_ofertas(client, db):
+    """Pedido do usuário (07/10): pesquisar só uma rota em vez do catálogo
+    inteiro. As demais param de ser coletadas E somem da aba Emissões — o
+    que já tinham coletado só ficaria envelhecendo na tela.
+    """
+    programa, _ = await _seed_programa_e_rota(db)
+    db.add(RotaEmissao(programa_id=programa.id, origem="GRU", destino="SCL", fonte="SITE_PRINCIPAL"))
+    await db.commit()
+    await _oferta(client, "GIG", "LIS")
+    await _oferta(client, "GRU", "SCL")
+
+    resposta = await client.put("/api/v1/emissoes/rotas/ativas", json={
+        "rotas": [{"programa_nome": "Azul", "origem": "GRU", "destino": "SCL"}],
+    })
+
+    assert resposta.json() == {"ativas": 1, "desativadas": 1, "nao_encontradas": []}
+    rotas = (await client.get("/api/v1/emissoes/rotas")).json()
+    assert [(r["origem"], r["destino"]) for r in rotas] == [("GRU", "SCL")]
+    ofertas = (await client.get("/api/v1/emissoes/ofertas")).json()
+    assert [(o["origem"], o["destino"]) for o in ofertas] == [("GRU", "SCL")]
+    # Desativar não apaga: o histórico continua no banco.
+    assert len((await db.execute(select(OfertaEmissao))).scalars().all()) == 2
+
+
+async def test_definir_rotas_ativas_com_rota_inexistente_nao_altera_nada(client, db):
+    """Um erro de digitação não pode desligar o catálogo inteiro."""
+    await _seed_programa_e_rota(db)
+
+    resposta = await client.put("/api/v1/emissoes/rotas/ativas", json={
+        "rotas": [{"programa_nome": "Azul", "origem": "GRU", "destino": "XXX"}],
+    })
+
+    assert resposta.status_code == 404
+    rotas = (await client.get("/api/v1/emissoes/rotas")).json()
+    assert [(r["origem"], r["destino"]) for r in rotas] == [("GIG", "LIS")]

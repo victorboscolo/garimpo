@@ -71,3 +71,30 @@ async def rotas(programa_nome: str | None = None, db: AsyncSession = Depends(get
         }
         for r in rotas
     ]
+
+
+class RotaAtivaIn(BaseModel):
+    programa_nome: str
+    origem: str
+    destino: str
+
+
+class RotasAtivasIn(BaseModel):
+    rotas: list[RotaAtivaIn]
+
+
+@router.put("/rotas/ativas")
+async def definir_rotas_ativas(payload: RotasAtivasIn, db: AsyncSession = Depends(get_db)):
+    """Troca o conjunto de rotas monitoradas: ficam ativas só as informadas,
+    todas as outras são desativadas (não apagadas). Ver
+    `emissoes_service.definir_rotas_ativas`.
+    """
+    resultado = await emissoes_service.definir_rotas_ativas(
+        db, [(r.programa_nome, r.origem, r.destino) for r in payload.rotas]
+    )
+    if resultado["nao_encontradas"]:
+        raise HTTPException(
+            status_code=404,
+            detail={"mensagem": "Rota(s) fora do catálogo — nada foi alterado.", "rotas": resultado["nao_encontradas"]},
+        )
+    return resultado
