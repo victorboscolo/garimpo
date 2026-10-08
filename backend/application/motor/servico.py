@@ -105,11 +105,11 @@ def _montar_justificativa(criterios: dict, categoria: str, confianca_historica: 
             partes.append(f"Comparada com o histórico do próprio parceiro ({base.total} oferta(s) aprovada(s)).")
         elif base.nivel == "SEGMENTO":
             partes.append(
-                f"Sem histórico próprio: comparada com o segmento '{base.rotulo}' "
+                f"{_motivo_sem_familia(base)}: comparada com o segmento '{base.rotulo}' "
                 f"({base.total} ofertas aprovadas)."
             )
         elif base.nivel == "MERCADO":
-            partes.append("Sem histórico próprio nem segmento com amostra suficiente: comparada com o mercado.")
+            partes.append(f"{_motivo_sem_familia(base)} nem segmento com amostra suficiente: comparada com o mercado.")
         else:
             partes.append("Sem base de comparação disponível ainda.")
     elif confianca_historica == "BAIXA":
@@ -168,6 +168,19 @@ async def _varejo_de_verdade(db: AsyncSession, parceiro_id, cache) -> bool:
             return True
 
     return False
+
+
+def _motivo_sem_familia(base) -> str:
+    """Por que o histórico do próprio parceiro não foi a régua.
+
+    "Sem histórico próprio" era dito também de parceiro com dez ofertas
+    aprovadas (achado de 08/10, Sam's Club) — o histórico existia, só era
+    disperso demais pra formar um padrão (ver `CV_MAXIMO_PARA_USAR_FAMILIA`).
+    """
+    descartadas = getattr(base, "historico_proprio_descartado", 0)
+    if descartadas:
+        return f"Histórico próprio irregular demais para servir de régua ({descartadas} ofertas muito diferentes entre si)"
+    return "Sem histórico próprio"
 
 
 async def classificar_promocao(db: AsyncSession, promocao: Promocao, cache: CacheMotor | None = None) -> Classificacao:
@@ -300,17 +313,28 @@ async def reler_pisos_e_reclassificar(db: AsyncSession) -> dict:
     As PENDENTES/APROVADAS afetadas são reclassificadas depois de todos os
     pisos corrigidos, pra já se compararem com o histórico relido.
     """
-    from application.condicoes import piso_do_valor_condicionado
+    from application.condicoes import piso_do_valor_condicionado, valor_e_condicionado
 
+    # Só as hoje marcadas como condicionadas: as mudanças de regra até aqui
+    # só tiram condição/piso de quem tinha, nunca criam em quem não tinha.
     linhas = (await db.execute(
-        select(Promocao.id, Promocao.pontuacao, Promocao.regulamento_texto, Promocao.valor_condicionado_piso)
-        .filter(Promocao.valor_condicionado.is_(True))
+        select(
+            Promocao.id, Promocao.pontuacao, Promocao.regulamento_texto,
+            Promocao.pontuacao_e_teto, Promocao.valor_condicionado_piso,
+        ).filter(Promocao.valor_condicionado.is_(True))
     )).all()
     novos = {
         linha.id: piso_do_valor_condicionado(linha.pontuacao, linha.regulamento_texto)
         for linha in linhas
     }
-    ids_alterados = [linha.id for linha in linhas if novos[linha.id] != linha.valor_condicionado_piso]
+    condicionadas = {
+        linha.id: valor_e_condicionado(linha.pontuacao, linha.regulamento_texto, linha.pontuacao_e_teto)
+        for linha in linhas
+    }
+    ids_alterados = [
+        linha.id for linha in linhas
+        if novos[linha.id] != linha.valor_condicionado_piso or not condicionadas[linha.id]
+    ]
     if not ids_alterados:
         return {"examinadas": len(linhas), "pisos_alterados": 0, "reclassificadas": 0, "erros": 0, "itens": []}
 
@@ -325,9 +349,11 @@ async def reler_pisos_e_reclassificar(db: AsyncSession) -> dict:
             "pontuacao": str(promocao.pontuacao),
             "piso_antes": str(promocao.valor_condicionado_piso) if promocao.valor_condicionado_piso is not None else None,
             "piso_depois": str(novos[promocao.id]) if novos[promocao.id] is not None else None,
+            "condicionada_depois": condicionadas[promocao.id],
             "status": promocao.status,
         })
         promocao.valor_condicionado_piso = novos[promocao.id]
+        promocao.valor_condicionado = condicionadas[promocao.id]
     await db.flush()
 
     reclassificaveis = [p for p in promocoes if p.status in ("PENDENTE", "APROVADA")]

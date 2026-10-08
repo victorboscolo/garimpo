@@ -243,3 +243,31 @@ def test_ou_sem_pontuacao_depois_nao_divide_o_texto():
     reg = ("Ganhe 10 pontos por real na categoria Básicos, em loja física ou no site, "
            "e 2 pontos demais produtos.")
     assert piso_do_valor_condicionado(Decimal("10"), reg) == Decimal("2")
+
+
+def test_frase_do_coletor_antigo_nao_e_regulamento():
+    """Registros de agosto guardam a frase que o coletor antigo escrevia
+    sobre si mesmo. O "Eram: 14 pontos" é o valor anterior da oferta, não um
+    degrau de baixo — lido como piso, o Sam's Club a 84 e a Petlove Saúde a
+    40 entravam nas comparações valendo 14 e 6.
+    """
+    reg = "Coletado do site oficial da Livelo. Base de comparacao anterior (Eram): 14 pontos."
+    assert valor_e_condicionado(Decimal("84"), reg, False) is False
+    assert piso_do_valor_condicionado(Decimal("84"), reg) is None
+    # "Até X" continua condicionado — quem diz é o card, não a frase.
+    assert valor_e_condicionado(Decimal("84"), reg, True) is True
+    assert piso_do_valor_condicionado(Decimal("84"), reg) is None
+
+
+def test_justificativa_distingue_historico_irregular_de_ausente():
+    """Sam's Club tinha dez ofertas aprovadas e a justificativa dizia "sem
+    histórico próprio" — o histórico existia, só era disperso demais.
+    """
+    from application.motor.historico import BaseComparacao
+    from application.motor.servico import _motivo_sem_familia
+
+    sem = BaseComparacao(None, 129, "SEGMENTO", "Supermercado", "MEDIA")
+    irregular = BaseComparacao(None, 129, "SEGMENTO", "Supermercado", "MEDIA", historico_proprio_descartado=10)
+
+    assert _motivo_sem_familia(sem) == "Sem histórico próprio"
+    assert "irregular" in _motivo_sem_familia(irregular) and "10 ofertas" in _motivo_sem_familia(irregular)

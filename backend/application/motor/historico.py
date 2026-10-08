@@ -200,6 +200,10 @@ class BaseComparacao:
     # A distribuição inteira, e não só a média: a nota é a posição da oferta
     # dentro dela. Ver motor/percentil.py.
     distribuicao: list = field(default_factory=list)
+    # Quantas ofertas do próprio parceiro existiam e foram descartadas como
+    # régua por serem dispersas demais — 0 quando o parceiro simplesmente não
+    # tinha histórico suficiente. Só serve pra justificativa dizer a verdade.
+    historico_proprio_descartado: int = 0
 
 
 _COLUNAS_DO_VALOR = (Promocao.pontuacao, Promocao.valor_condicionado, Promocao.valor_condicionado_piso)
@@ -346,6 +350,12 @@ async def obter_base_comparacao(
             distribuicao=valores_familia,
         )
 
+    descartado = (
+        familia.total_campanhas_janela
+        if familia.media_ponderada is not None and familia.total_campanhas_janela >= minimo_familia
+        else 0
+    )
+
     # Vínculos do parceiro (não só o slug — precisa da curadoria por parceiro
     # também, que mora no vínculo, não no slug).
     vinculos = await vinculos_do_parceiro(db, parceiro_id, cache)
@@ -382,6 +392,7 @@ async def obter_base_comparacao(
         return BaseComparacao(
             media_ponderada=media, total=len(valores), nivel="SEGMENTO",
             rotulo=escolhido, confianca_historica="MEDIA", distribuicao=valores,
+            historico_proprio_descartado=descartado,
         )
 
     promocoes_mercado = await _aprovadas_leves(db, programa_id, cache)
@@ -391,5 +402,5 @@ async def obter_base_comparacao(
     return BaseComparacao(
         media_ponderada=Decimal(str(sum(valores) / len(valores))),
         total=len(valores), nivel="MERCADO", rotulo=None, confianca_historica="BAIXA",
-        distribuicao=valores,
+        distribuicao=valores, historico_proprio_descartado=descartado,
     )

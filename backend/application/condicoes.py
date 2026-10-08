@@ -51,6 +51,22 @@ PADRAO_LIMITE_ACUMULO = re.compile(
 PADRAO_ALTERNATIVA = re.compile(r"\s+ou\s+(?=(?:de\s+)?\d[\d.]*\s*pontos?\b)", re.IGNORECASE)
 
 
+def _regulamento_da_oferta(regulamento_texto: str | None) -> str | None:
+    """O regulamento, ou None quando o texto é a frase do coletor antigo.
+
+    Achado de 08/10: registros de agosto guardam "Coletado do site oficial
+    da Livelo. Base de comparacao anterior (Eram): 14 pontos." — e esse "14
+    pontos" era lido como degrau de baixo da oferta. É o valor ANTERIOR,
+    escrito pelo próprio coletor, não uma condição: 22 ofertas estavam
+    marcadas como condicionadas só por isso, e entravam nas comparações do
+    motor valendo o que valiam antes da campanha (Petlove Saúde a 40 pontos
+    contava como 6).
+    """
+    if not regulamento_texto or PADRAO_FRASE_DO_COLETOR.match(regulamento_texto.strip()):
+        return None
+    return regulamento_texto
+
+
 def _valores_citados(regulamento: str) -> list[Decimal]:
     valores = []
     for bruto in PADRAO_PONTOS_NO_TEXTO.findall(regulamento):
@@ -78,6 +94,7 @@ def valor_e_condicionado(
     """
     if pontuacao_e_teto:
         return True
+    regulamento_texto = _regulamento_da_oferta(regulamento_texto)
     if not regulamento_texto:
         return False
 
@@ -120,6 +137,7 @@ def piso_do_valor_condicionado(pontuacao: Decimal, regulamento_texto: str | None
     escada. Isso vale mesmo dentro da cláusula certa, não só entre
     cláusulas separadas.
     """
+    regulamento_texto = _regulamento_da_oferta(regulamento_texto)
     if not regulamento_texto:
         return None
 
