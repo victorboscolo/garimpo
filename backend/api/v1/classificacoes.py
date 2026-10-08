@@ -47,3 +47,15 @@ async def reclassificar_todas(db: AsyncSession = Depends(get_db)):
     from application.motor.servico import reclassificar_todas as executar
 
     return await executar(db)
+
+
+@router.post("/reler-condicoes")
+async def reler_condicoes(db: AsyncSession = Depends(get_db)):
+    """Relê o piso das ofertas condicionadas com a regra atual e
+    reclassifica só as que mudaram — pra quando a regra de leitura do
+    regulamento muda e não se quer reprocessar a base inteira. Ver
+    `motor.servico.reler_pisos_e_reclassificar`.
+    """
+    from application.motor.servico import reler_pisos_e_reclassificar
+
+    return await reler_pisos_e_reclassificar(db)

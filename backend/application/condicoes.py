@@ -45,6 +45,12 @@ PADRAO_LIMITE_ACUMULO = re.compile(
 )
 
 
+# "150 pontos ... no plano de R$95 ou 14 pontos ... no plano de R$175" — o
+# "ou" seguido de uma pontuação abre uma oferta ALTERNATIVA (outro plano,
+# outro produto), não o degrau de baixo da mesma compra.
+PADRAO_ALTERNATIVA = re.compile(r"\s+ou\s+(?=(?:de\s+)?\d[\d.]*\s*pontos?\b)", re.IGNORECASE)
+
+
 def _valores_citados(regulamento: str) -> list[Decimal]:
     valores = []
     for bruto in PADRAO_PONTOS_NO_TEXTO.findall(regulamento):
@@ -123,6 +129,21 @@ def piso_do_valor_condicionado(pontuacao: Decimal, regulamento_texto: str | None
         clausula = next((c for c in clausulas if pontuacao in _valores_citados(c)), None)
         if clausula is not None:
             texto = clausula
+
+    # Alternativa não é piso (achado do usuário, 08/10, Sam's Club): "150
+    # pontos na anuidade do plano de R$95 ou 14 pontos no plano de R$175"
+    # são dois planos diferentes — quem adere ao de R$95 recebe 150 na
+    # anuidade inteira, o 14 não é "o que sobra pro resto da compra". Lido
+    # como piso, o motor comparava todas as campanhas do parceiro (40, 84,
+    # 150...) como se valessem 14, e um recorde saía com a mesma nota das
+    # outras. Quando o texto se divide em alternativas, o piso é procurado
+    # só dentro da que cita o valor exibido; se nenhuma cita, vale o texto
+    # inteiro, como antes.
+    alternativas = PADRAO_ALTERNATIVA.split(texto)
+    if len(alternativas) > 1:
+        alternativa = next((a for a in alternativas if pontuacao in _valores_citados(a)), None)
+        if alternativa is not None:
+            texto = alternativa
 
     valores = _valores_citados(texto)
     if not valores:

@@ -202,3 +202,44 @@ def test_frase_sintetica_do_coletor_antigo_nao_e_regulamento():
     assert resolver_marketplace(
         "Coletado do site oficial da Livelo. Base de comparacao anterior (Eram): 2 pontos."
     ) is None
+
+
+def test_alternativa_com_ou_nao_vira_piso():
+    """Sam's Club, texto real de 08/10/2026 (achado do usuário): os 14
+    pontos são de OUTRO plano, não o que sobra pro resto da compra. Lido
+    como piso, o motor comparava 40, 84 e 150 como se fossem todos 14 — e o
+    recorde de 150 saía com a mesma nota das campanhas anteriores.
+    """
+    reg = ("Campanha válida de 08 a 12/10/2026. Ganhe 150 pontos por real sob o valor da "
+           "anuidade ao se tornar sócio Sam's Club do plano de R$95,00, válido apenas na "
+           "primeira adesão, mediante a compra de no mínimo R$300 em até 30 dias após "
+           "adesão, em loja física ou 14 pontos por real sob a adesão do plano de R$175 "
+           "mediante a compra de no mínimo R$300 em até 30 dias após adesão. Ganhe 30% OFF "
+           "em todos os planos. Consulte o regulamento.")
+    assert piso_do_valor_condicionado(Decimal("150"), reg) is None
+
+
+def test_piso_e_procurado_dentro_da_alternativa_do_valor_exibido():
+    """Porto Seguro, texto real: duas alternativas (seguro internacional ou
+    nacional), cada uma com a sua escada Clube/demais clientes. Guardamos
+    os 25 do internacional, que já é o que qualquer cliente recebe ali — os
+    3 pontos do seguro nacional são de outro produto.
+    """
+    reg = ("Ganhe 30 pontos a cada real gasto, exclusivo para assinantes do Clube Livelo e "
+           "25 pontos por real demais clientes na contratação do seguro viagem "
+           "internacional ou 5 pontos por real gasto, exclusivo para assinantes do Clube "
+           "Livelo e 3 pontos por real demais clientes na contratação do seguro viagem "
+           "nacional. Consulte o regulamento.")
+    assert piso_do_valor_condicionado(Decimal("25"), reg) is None
+    # O degrau dentro da própria alternativa continua valendo.
+    assert piso_do_valor_condicionado(Decimal("30"), reg) == Decimal("25")
+    assert piso_do_valor_condicionado(Decimal("5"), reg) == Decimal("3")
+
+
+def test_ou_sem_pontuacao_depois_nao_divide_o_texto():
+    """"ou" comum de frase ("loja física ou site") não é alternativa de
+    pontuação — a escada continua sendo lida no texto inteiro.
+    """
+    reg = ("Ganhe 10 pontos por real na categoria Básicos, em loja física ou no site, "
+           "e 2 pontos demais produtos.")
+    assert piso_do_valor_condicionado(Decimal("10"), reg) == Decimal("2")

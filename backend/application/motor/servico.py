@@ -286,6 +286,60 @@ async def reclassificar_todas(db: AsyncSession) -> dict:
     return {"total": len(promocoes), "processadas": len(promocoes) - erros, "erros": erros}
 
 
+async def reler_pisos_e_reclassificar(db: AsyncSession) -> dict:
+    """Relê o piso das ofertas condicionadas com a regra atual de
+    `application.condicoes` e reclassifica só as que mudaram.
+
+    O piso é leitura do regulamento gravada numa coluna; quando a regra de
+    leitura muda (08/10: alternativa com "ou" deixou de ser piso), o que já
+    está gravado fica com a leitura antiga — inclusive ofertas vencidas, que
+    o coletor nunca reenvia mas continuam servindo de histórico de
+    comparação do parceiro. Reclassificar tudo resolveria, mas relê a base
+    inteira; aqui só as ofertas afetadas são tocadas.
+
+    As PENDENTES/APROVADAS afetadas são reclassificadas depois de todos os
+    pisos corrigidos, pra já se compararem com o histórico relido.
+    """
+    from application.condicoes import piso_do_valor_condicionado
+
+    linhas = (await db.execute(
+        select(Promocao.id, Promocao.pontuacao, Promocao.regulamento_texto, Promocao.valor_condicionado_piso)
+        .filter(Promocao.valor_condicionado.is_(True))
+    )).all()
+    novos = {
+        linha.id: piso_do_valor_condicionado(linha.pontuacao, linha.regulamento_texto)
+        for linha in linhas
+    }
+    ids_alterados = [linha.id for linha in linhas if novos[linha.id] != linha.valor_condicionado_piso]
+    if not ids_alterados:
+        return {"examinadas": len(linhas), "pisos_alterados": 0, "reclassificadas": 0, "erros": 0, "itens": []}
+
+    promocoes = (await db.execute(
+        select(Promocao).filter(Promocao.id.in_(ids_alterados))
+    )).scalars().unique().all()
+
+    itens = []
+    for promocao in promocoes:
+        itens.append({
+            "parceiro": promocao.parceiro.nome if promocao.parceiro else None,
+            "pontuacao": str(promocao.pontuacao),
+            "piso_antes": str(promocao.valor_condicionado_piso) if promocao.valor_condicionado_piso is not None else None,
+            "piso_depois": str(novos[promocao.id]) if novos[promocao.id] is not None else None,
+            "status": promocao.status,
+        })
+        promocao.valor_condicionado_piso = novos[promocao.id]
+    await db.flush()
+
+    reclassificaveis = [p for p in promocoes if p.status in ("PENDENTE", "APROVADA")]
+    _, erros = await classificar_em_lote(db, reclassificaveis)
+    await db.commit()
+
+    return {
+        "examinadas": len(linhas), "pisos_alterados": len(ids_alterados),
+        "reclassificadas": len(reclassificaveis) - erros, "erros": erros, "itens": itens,
+    }
+
+
 async def classificar_em_lote(db: AsyncSession, promocoes: list) -> tuple[list, int]:
     """Classifica várias promoções lendo os dados de comparação uma vez só.
 
