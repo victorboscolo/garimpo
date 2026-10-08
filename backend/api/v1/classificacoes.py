@@ -45,7 +45,7 @@ async def reclassificar_todas(db: AsyncSession = Depends(get_db)):
 
     Promoções REJEITADAS não são reprocessadas (decisão já é definitiva).
     """
-    from application.motor.servico import reclassificar_todas as executar
+    from application.motor.servico import reclassificar_todas_registrando as executar
 
     return await executar(db)
 

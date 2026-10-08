@@ -245,11 +245,11 @@ async def aprovar_lote(
     Custa ~2 segundos para as ~370 atuais, e só roda quando algo foi de fato
     aprovado.
     """
-    from application.motor.servico import reclassificar_todas
+    from application.motor.servico import reclassificar_todas_registrando
 
     resultado = await _decidir_lote(db, payload.ids, novo_status="APROVADA", usuario=usuario)
     if resultado.processadas > 0:
-        await reclassificar_todas(db)
+        await reclassificar_todas_registrando(db)
     return resultado
 
 

@@ -15,7 +15,7 @@ logger = logging.getLogger("garimpo.application.saude")
 JOB_LABEL = {
     "coletor_livelo": "Coletor Livelo",
     "coletor_esfera": "Coletor Esfera",
-    "recalibracao": "Recalibração semanal",
+    "recalibracao": "Recalibração",
     "backup": "Backup",
 }
 

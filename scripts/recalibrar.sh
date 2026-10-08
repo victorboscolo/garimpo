@@ -58,14 +58,9 @@ if [ $? -ne 0 ]; then
 fi
 echo "Resultado: $RESULTADO"
 
-# Extração simples por regex, no mesmo espírito do case abaixo — não é um
-# parser de JSON de verdade, só pega os dois números que interessam pro painel.
-PROCESSADAS=$(echo "$RESULTADO" | grep -o '"processadas":[0-9]*' | grep -o '[0-9]*')
-ERROS=$(echo "$RESULTADO" | grep -o '"erros":[0-9]*' | grep -o '[0-9]*')
-curl -s --max-time 10 -X POST "$API/execucoes" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: $COLETOR_API_KEY" \
-  -d "{\"job\":\"recalibracao\",\"status\":\"SUCESSO\",\"criadas\":${PROCESSADAS:-null},\"falhas\":${ERROS:-null}}" > /dev/null
+# O sucesso não é mais registrado aqui: a própria rota reclassificar-todas
+# registra a execução no Painel de Saúde (08/10) — a recalibração também
+# roda a cada aprovação em lote pelo painel, e só o servidor vê as duas.
 
 echo "Conferindo divergências com o que já foi publicado..."
 DIVERGENCIAS=$(curl -s --max-time 30 -H "X-API-Key: $COLETOR_API_KEY" "$API/publicacoes/divergencias")

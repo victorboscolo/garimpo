@@ -319,6 +319,31 @@ async def reclassificar_todas(db: AsyncSession) -> dict:
     return {"total": len(promocoes), "processadas": len(promocoes) - erros, "erros": erros}
 
 
+async def reclassificar_todas_registrando(db: AsyncSession) -> dict:
+    """`reclassificar_todas` + registro no Painel de Saúde.
+
+    A recalibração roda a cada aprovação em lote, mas só o job semanal
+    (`scripts/recalibrar.sh`) a registrava — com ele desligado, a aba Saúde
+    acusava "atrasada" por semanas enquanto a base era reprocessada todo
+    dia (achado do usuário, 08/10). Quem dispara pela API registra aqui.
+
+    O registro nunca derruba quem chamou: a aprovação já foi gravada, e
+    falhar por causa do painel de saúde seria pior que o painel ficar sem
+    essa linha.
+    """
+    from application.saude_service import registrar_execucao
+
+    resultado = await reclassificar_todas(db)
+    try:
+        await registrar_execucao(
+            db, "recalibracao", "SUCESSO",
+            criadas=resultado["processadas"], falhas=resultado["erros"],
+        )
+    except Exception:
+        logger.exception("Não foi possível registrar a recalibração no Painel de Saúde.")
+    return resultado
+
+
 async def reclassificar_parceiros(db: AsyncSession, parceiro_ids: list) -> dict:
     """Reprocessa só as promoções PENDENTES/APROVADAS dos parceiros dados.
 
