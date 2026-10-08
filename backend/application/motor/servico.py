@@ -319,6 +319,26 @@ async def reclassificar_todas(db: AsyncSession) -> dict:
     return {"total": len(promocoes), "processadas": len(promocoes) - erros, "erros": erros}
 
 
+async def reclassificar_parceiros(db: AsyncSession, parceiro_ids: list) -> dict:
+    """Reprocessa só as promoções PENDENTES/APROVADAS dos parceiros dados.
+
+    Pra quando uma mudança de regra afeta parceiros conhecidos e não se
+    quer reprocessar a base inteira — em lote, lendo a base de comparação
+    uma vez só (ver `classificar_em_lote`).
+    """
+    promocoes = (await db.execute(
+        select(Promocao).filter(
+            Promocao.parceiro_id.in_(parceiro_ids),
+            Promocao.status.in_(["PENDENTE", "APROVADA"]),
+        )
+    )).scalars().unique().all()
+
+    _, erros = await classificar_em_lote(db, promocoes)
+    await db.commit()
+
+    return {"total": len(promocoes), "processadas": len(promocoes) - erros, "erros": erros}
+
+
 async def reler_pisos_e_reclassificar(db: AsyncSession) -> dict:
     """Relê o piso das ofertas condicionadas com a regra atual de
     `application.condicoes` e reclassifica só as que mudaram.

@@ -47,3 +47,26 @@ def test_media_zero_nao_quebra():
     média não pode estourar.
     """
     assert _coeficiente_variacao([Decimal("0"), Decimal("0")]) == 0.0
+
+
+def test_amostra_pequena_e_dispersa_nao_serve_de_regua():
+    """O caso que criou o corte (Magalu, 02/09): duas ofertas, 1 e 7."""
+    from application.motor.historico import _familia_serve_de_regua
+
+    assert _familia_serve_de_regua([Decimal("1"), Decimal("7")], minimo=2, cv_maximo=0.5) is False
+    assert _familia_serve_de_regua([Decimal("5"), Decimal("6")], minimo=2, cv_maximo=0.5) is True
+    assert _familia_serve_de_regua([Decimal("5")], minimo=2, cv_maximo=0.5) is False
+
+
+def test_amostra_grande_serve_de_regua_mesmo_dispersa():
+    """Petlove Saúde, valores reais de 08/10: treze ofertas de 6 a 50
+    pontos. A dispersão é o parceiro alternando base e campanha — com essa
+    amostra dá pra dizer que 50 é o topo dele, e o motor descartava isso.
+    """
+    from application.motor.historico import _coeficiente_variacao, _familia_serve_de_regua
+
+    valores = [Decimal(v) for v in (6, 6, 8, 8, 20, 20, 25, 30, 30, 40, 40, 45, 50)]
+    assert _coeficiente_variacao(valores) > 0.5
+    assert _familia_serve_de_regua(valores, minimo=2, cv_maximo=0.5) is True
+    # Quatro ofertas dispersas ainda caem no corte.
+    assert _familia_serve_de_regua(valores[::4], minimo=2, cv_maximo=0.5) is False

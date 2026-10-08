@@ -286,6 +286,34 @@ MINIMO_PARA_USAR_FAMILIA = 2
 CV_MAXIMO_PARA_USAR_FAMILIA = 0.5
 
 
+# O corte de dispersão acima nasceu de amostra minúscula (duas ofertas) e
+# valia pra qualquer tamanho. Medido em 08/10: 91 dos 265 parceiros com
+# histórico eram descartados, 35 deles com cinco ou mais ofertas — Petlove
+# Saúde (13 ofertas, de 6 a 50 pontos), Sam's Club (11, de 14 a 150). Com
+# amostra desse tamanho a dispersão não é coincidência aritmética, é o
+# parceiro alternando entre valor base e campanha: dá pra dizer com
+# segurança que 50 é o topo dele e 6 o fundo, e era justamente essa
+# informação que o motor jogava fora. A partir deste tamanho o histórico
+# próprio é usado sempre, disperso ou não (decisão do usuário, 08/10).
+MINIMO_PARA_IGNORAR_DISPERSAO = 5
+
+
+def _familia_serve_de_regua(
+    valores: list[Decimal], minimo: int, cv_maximo: float,
+    minimo_para_ignorar_dispersao: int = MINIMO_PARA_IGNORAR_DISPERSAO,
+) -> bool:
+    """O histórico do próprio parceiro sustenta a comparação?
+
+    Precisa de quantidade mínima; abaixo de `minimo_para_ignorar_dispersao`
+    precisa também ser coerente (ver `CV_MAXIMO_PARA_USAR_FAMILIA`).
+    """
+    if len(valores) < minimo:
+        return False
+    if len(valores) >= minimo_para_ignorar_dispersao:
+        return True
+    return _coeficiente_variacao(valores) <= cv_maximo
+
+
 def _coeficiente_variacao(valores: list[Decimal]) -> float:
     """Desvio padrão populacional dividido pela média.
 
@@ -326,11 +354,12 @@ async def obter_base_comparacao(
     "servicos" reúne 29 parceiros que fazem coisas bem diferentes. Por isso ela
     fica no nível 2 e a confiança cai para MEDIA quando é usada.
 
-    Quantidade suficiente não basta: a amostra também precisa ser coerente
-    (ver `CV_MAXIMO_PARA_USAR_FAMILIA`) — duas ofertas muito diferentes
-    entre si (ex: 1 e 7 pontos) não formam um padrão, mesmo já passando do
-    mínimo de quantidade. Falha nesse critério desce a cascata pro
-    segmento/mercado, igual já acontece com amostra insuficiente.
+    Quantidade suficiente não basta numa amostra pequena: ela também precisa
+    ser coerente (ver `CV_MAXIMO_PARA_USAR_FAMILIA`) — duas ofertas muito
+    diferentes entre si (ex: 1 e 7 pontos) não formam um padrão. Falha nesse
+    critério desce a cascata pro segmento/mercado, igual já acontece com
+    amostra insuficiente. Com amostra grande o corte não se aplica (ver
+    `MINIMO_PARA_IGNORAR_DISPERSAO`).
     """
     limiar = await resolver_configuracao(db, "historico_suficiente", programa_id=programa_id, cache=cache)
     if minimo_familia is None:
@@ -343,10 +372,9 @@ async def obter_base_comparacao(
         excluir_promocao_id=excluir_promocao_id, cache=cache,
     )
     valores_familia = [pontuacao for pontuacao, _ in familia.amostras]
-    if (
-        familia.media_ponderada is not None
-        and familia.total_campanhas_janela >= minimo_familia
-        and _coeficiente_variacao(valores_familia) <= cv_maximo_familia
+    minimo_sem_corte = (limiar or {}).get("min_para_ignorar_dispersao", MINIMO_PARA_IGNORAR_DISPERSAO)
+    if familia.media_ponderada is not None and _familia_serve_de_regua(
+        valores_familia, minimo_familia, cv_maximo_familia, minimo_sem_corte
     ):
         return BaseComparacao(
             media_ponderada=familia.media_ponderada,

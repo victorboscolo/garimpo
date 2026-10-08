@@ -1,6 +1,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -59,3 +60,17 @@ async def reler_condicoes(db: AsyncSession = Depends(get_db)):
     from application.motor.servico import reler_pisos_e_reclassificar
 
     return await reler_pisos_e_reclassificar(db)
+
+
+class ReclassificarParceirosIn(BaseModel):
+    parceiro_ids: list[uuid.UUID]
+
+
+@router.post("/reclassificar-parceiros")
+async def reclassificar_parceiros(payload: ReclassificarParceirosIn, db: AsyncSession = Depends(get_db)):
+    """Reprocessa só as promoções dos parceiros informados — ver
+    `motor.servico.reclassificar_parceiros`.
+    """
+    from application.motor.servico import reclassificar_parceiros as executar
+
+    return await executar(db, payload.parceiro_ids)
