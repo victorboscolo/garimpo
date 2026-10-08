@@ -271,3 +271,39 @@ def test_justificativa_distingue_historico_irregular_de_ausente():
 
     assert _motivo_sem_familia(sem) == "Sem histórico próprio"
     assert "irregular" in _motivo_sem_familia(irregular) and "10 ofertas" in _motivo_sem_familia(irregular)
+
+
+def test_recorrencia_de_assinatura_nao_vira_piso():
+    """Petlove Saúde, textos reais (decisão do usuário, 08/10): a campanha
+    é a primeira mensalidade; os 2 pontos da recorrência faziam 50 pontos
+    sair "Pouco atrativa" enquanto a oferta permanente de 6 saía Excelente.
+    """
+    reg = ("Campanha válida de 25 a 26/08/2026. Ganhe 60 pontos por real gasto na primeira "
+           "mensalidade do plano de saúde Petlove exclusivo para assinantes Clube Livelo; 50 "
+           "pontos por real gasto para demais clientes na primeira mensalidade e 2 pontos por "
+           "real na recorrência. Consulte o regulamento.")
+    assert piso_do_valor_condicionado(Decimal("50"), reg) is None
+    # O aviso no card continua: a oferta segue marcada como condicionada.
+    assert valor_e_condicionado(Decimal("50"), reg, False) is True
+
+    reg_clube = ("Campanha válida em 15/09/2026. Ganhe 70 pontos por real gasto na primeira "
+                 "mensalidade do plano de saúde Petlove, exclusivo para assinantes do Clube "
+                 "Livelo; 6 pontos por real demais clientes e 2 pontos por real na recorrência.")
+    assert piso_do_valor_condicionado(Decimal("6"), reg_clube) is None
+    # O degrau Clube/demais clientes continua sendo lido.
+    assert piso_do_valor_condicionado(Decimal("70"), reg_clube) == Decimal("6")
+
+
+def test_recorrencia_no_formato_da_esfera():
+    reg = ("* O acúmulo padrão é de 6 pontos a cada R$1 gasto na primeira mensalidade, podendo "
+           "ser alterado durante períodos promocionais e 2 pontos a cada R$1 gasto na "
+           "recorrência da assinatura.")
+    assert piso_do_valor_condicionado(Decimal("6"), reg) is None
+
+
+def test_clientes_recorrentes_nao_e_recorrencia_de_assinatura():
+    """Buser: "demais clientes recorrentes" é quem já comprou antes — um
+    degrau de verdade, continua sendo o piso.
+    """
+    reg = "Ganhe 8 pontos por real para Novos Usuários e 2 pontos por real para os demais clientes recorrentes."
+    assert piso_do_valor_condicionado(Decimal("8"), reg) == Decimal("2")

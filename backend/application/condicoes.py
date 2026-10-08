@@ -51,6 +51,16 @@ PADRAO_LIMITE_ACUMULO = re.compile(
 PADRAO_ALTERNATIVA = re.compile(r"\s+ou\s+(?=(?:de\s+)?\d[\d.]*\s*pontos?\b)", re.IGNORECASE)
 
 
+# "50 pontos por real na primeira mensalidade e 2 pontos por real na
+# recorrência" — a taxa das mensalidades seguintes de uma assinatura. O
+# trecho proibido no meio (outra menção a "pontos") impede que a busca
+# comece no número da primeira mensalidade e engula a frase inteira.
+PADRAO_RECORRENCIA = re.compile(
+    r"\d[\d.]*\s*pontos?\b(?:(?!\bpontos?\b)[^.;•*]){0,60}?\bna\s+recorr[êe]ncia",
+    re.IGNORECASE,
+)
+
+
 def _regulamento_da_oferta(regulamento_texto: str | None) -> str | None:
     """O regulamento, ou None quando o texto é a frase do coletor antigo.
 
@@ -142,6 +152,16 @@ def piso_do_valor_condicionado(pontuacao: Decimal, regulamento_texto: str | None
         return None
 
     texto = PADRAO_LIMITE_ACUMULO.sub(" ", regulamento_texto)
+    # A taxa da recorrência não é piso da oferta (decisão do usuário, 08/10,
+    # Petlove Saúde): num plano de assinatura a campanha é a primeira
+    # mensalidade, e é por ela que as campanhas se comparam. Lida como piso,
+    # toda campanha do parceiro (30, 45, 50 pontos...) entrava valendo os 2
+    # da recorrência e saía "Pouco atrativa", enquanto a oferta permanente
+    # de 6 — que também cai pra 2 na recorrência, só que o site não diz —
+    # era comparada valendo 6 e ganhava de todas. A oferta continua marcada
+    # como condicionada (`valor_e_condicionado` não muda): o aviso no card
+    # fica, o que sai é a recorrência como régua.
+    texto = PADRAO_RECORRENCIA.sub(" ", texto)
     if "*" in texto:
         clausulas = [c for c in texto.split("*") if c.strip()]
         clausula = next((c for c in clausulas if pontuacao in _valores_citados(c)), None)
