@@ -2074,6 +2074,9 @@ function formatPontos(valor) {
 function formatUnidade(unidade) {
   if (unidade === "pontos_por_real") return "pontos por R$ 1";
   if (unidade === "pontos_por_dolar") return "pontos por U$ 1";
+  // Bônus fixo (ex: Localiza Meoo, "30 mil pontos a cada assinatura") — não é
+  // taxa por real gasto, e o motor não o compara com as outras ofertas.
+  if (unidade === "pontos_por_contrato") return "pontos por contrato";
   return unidade;
 }
 

@@ -73,12 +73,31 @@ def _texto_limpo(html_bruto: str | None) -> str | None:
     return texto or None
 
 
-def _unidade(descricao: str | None) -> str:
-    """"dólar em compra" -> pontos_por_dolar; qualquer outra coisa (incluindo
-    ausência, como no único caso sem o campo) -> pontos_por_real.
+# "Ganhe 30 mil pontos a cada assinatura no site parceiro" — bônus fixo por
+# contrato, não taxa por real gasto.
+_PADRAO_BONUS_POR_CONTRATO = re.compile(
+    r"pontos?\s+(?:esfera\s+)?a\s+cada\s+(?:assinatura|contrato|carro)", re.IGNORECASE
+)
+
+
+def _unidade(descricao: str | None, regulamento: str | None = None) -> str:
+    """"dólar em compra" -> pontos_por_dolar; bônus fixo por contrato ->
+    pontos_por_contrato; qualquer outra coisa (incluindo ausência, como no
+    único caso sem o campo) -> pontos_por_real.
+
+    O bônus fixo é lido da frase de abertura do regulamento — a que anuncia
+    a oferta do momento —, e só dela: a Localiza Meoo alterna entre "15
+    pontos a cada R$ 1,00 na primeira mensalidade" e "30 mil pontos a cada
+    assinatura", mas o corpo do regulamento cita sempre o padrão "15.000
+    Pontos Esfera a cada carro assinado", mesmo quando a campanha vigente é
+    por real. Achado de 08/10: gravado como pontos_por_real, o bônus de
+    30.000 era comparado com ofertas de 5 por real e saía Excepcional.
     """
     if descricao and "dólar" in descricao.lower():
         return "pontos_por_dolar"
+    abertura = (regulamento or "").split(";")[0]
+    if _PADRAO_BONUS_POR_CONTRATO.search(abertura):
+        return "pontos_por_contrato"
     return "pontos_por_real"
 
 
@@ -146,7 +165,7 @@ def parceiro_para_bruta(item: dict) -> ParceiroEsfera:
         codigo_externo=item["id"],
         nome_exibicao=item["displayName"],
         pontuacao=Decimal(item["esf_accumulationValue"]),
-        unidade_pontuacao=_unidade(item.get("esf_accumulationFactorDescription")),
+        unidade_pontuacao=_unidade(item.get("esf_accumulationFactorDescription"), regulamento),
         pontuacao_e_teto=prefixo == "até",
         regulamento_texto=regulamento,
         categorias=_categorias(item.get("parentCategories") or []),

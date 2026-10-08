@@ -15,10 +15,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from application.configuracoes_service import resolver_configuracao
 from application.motor import pilares
 from application.motor.cache import CacheMotor
-from application.motor.historico import _aprovadas_leves, obter_base_comparacao, obter_historico_familia, vinculos_do_parceiro
+from application.motor.historico import (
+    BaseComparacao, HistoricoFamilia, _aprovadas_leves, obter_base_comparacao,
+    obter_historico_familia, vinculos_do_parceiro,
+)
 from application.motor.percentil import valor_comparavel
 from domain.motor import ENTIDADE_PROMOCAO, Classificacao
-from domain.promocoes import CategoriaPromocao, Promocao
+from domain.promocoes import UNIDADE_BONUS_POR_CONTRATO, CategoriaPromocao, Promocao
 
 logger = logging.getLogger("garimpo.motor")
 
@@ -101,7 +104,12 @@ def _montar_justificativa(criterios: dict, categoria: str, confianca_historica: 
     # Dizer contra o que a oferta foi comparada é o que torna a nota audível:
     # sem isso, "Boa" é um número sem procedência.
     if base is not None:
-        if base.nivel == "FAMILIA":
+        if base.nivel == "BONUS_FIXO":
+            partes.append(
+                "Bônus fixo por contrato: não é comparável com ofertas de pontos por real, "
+                "então os critérios de comparação ficam neutros."
+            )
+        elif base.nivel == "FAMILIA":
             partes.append(f"Comparada com o histórico do próprio parceiro ({base.total} oferta(s) aprovada(s)).")
         elif base.nivel == "SEGMENTO":
             partes.append(
@@ -200,18 +208,30 @@ async def classificar_promocao(db: AsyncSession, promocao: Promocao, cache: Cach
         db, "faixas_classificacao", programa_id=promocao.programa_id, parceiro_id=promocao.parceiro_id, cache=cache
     ) or FAIXAS_DEFAULT
 
-    historico = await obter_historico_familia(
-        db, parceiro_id=promocao.parceiro_id, programa_id=promocao.programa_id,
-        excluir_promocao_id=promocao.id, cache=cache,
-    )
-    # Base do pilar Histórico, em cascata: histórico próprio -> segmento ->
-    # mercado. Sem isso o pilar devolvia neutro para 223 dos 249 parceiros, que
-    # não têm oferta aprovada anterior com que se comparar.
-    base = await obter_base_comparacao(
-        db, parceiro_id=promocao.parceiro_id, programa_id=promocao.programa_id,
-        excluir_promocao_id=promocao.id, cache=cache,
-    )
-    mercado = await _mercado(db, promocao.programa_id, cache)
+    if promocao.unidade_pontuacao == UNIDADE_BONUS_POR_CONTRATO:
+        # Bônus fixo por contrato não tem régua: comparar 30.000 pontos por
+        # assinatura com ofertas de 5 por real não mede nada. Sem base, os
+        # três pilares comparativos devolvem o neutro (50) — a oferta
+        # continua classificada, só não ganha nem perde nota por comparação.
+        historico = HistoricoFamilia(
+            media_ponderada=None, maior_valor_historico=None,
+            total_campanhas_janela=0, confianca_historica="BAIXA",
+        )
+        base = BaseComparacao(None, 0, "BONUS_FIXO", None, "BAIXA")
+        mercado = []
+    else:
+        historico = await obter_historico_familia(
+            db, parceiro_id=promocao.parceiro_id, programa_id=promocao.programa_id,
+            excluir_promocao_id=promocao.id, cache=cache,
+        )
+        # Base do pilar Histórico, em cascata: histórico próprio -> segmento ->
+        # mercado. Sem isso o pilar devolvia neutro para 223 dos 249 parceiros, que
+        # não têm oferta aprovada anterior com que se comparar.
+        base = await obter_base_comparacao(
+            db, parceiro_id=promocao.parceiro_id, programa_id=promocao.programa_id,
+            excluir_promocao_id=promocao.id, cache=cache,
+        )
+        mercado = await _mercado(db, promocao.programa_id, cache)
 
     if cache is not None and "qtd_categorias" in cache.dados:
         qtd_categorias = cache.dados["qtd_categorias"].get(promocao.id, 0)

@@ -1,7 +1,10 @@
+import logging
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import contains_eager
@@ -22,6 +25,7 @@ from domain.promocoes import Promocao
 from infrastructure.db.session import get_db
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def _stmt_listagem():
@@ -297,4 +301,63 @@ async def ingerir_promocao(
         data_fim=payload.data_fim,
     )
     promocao = await ingerir_promocao_bruta(db, bruta, payload.origem_detalhe)
+    return promocao
+
+
+class CorrecaoIn(BaseModel):
+    pontuacao: Decimal | None = None
+    unidade_pontuacao: str | None = None
+    motivo: str
+
+
+@router.post("/{promocao_id}/corrigir", response_model=PromocaoOut)
+async def corrigir_promocao(
+    promocao_id: uuid.UUID,
+    payload: CorrecaoIn,
+    db: AsyncSession = Depends(get_db),
+):
+    """Corrige pontuação e/ou unidade de uma promoção já gravada.
+
+    Exceção consciente à imutabilidade da promoção (RN-001), pra erro de
+    dado e não pra mudança de oferta — os dois casos que a motivaram
+    (08/10): a Esfera publicou "30 mil pontos a cada R$ 1,00" onde eram 30,
+    e bônus fixos por contrato estavam gravados como pontos por real. O
+    motivo é obrigatório e vai pro log; o valor original fica nele também.
+
+    O hash de dedup não é recalculado: ele identifica o que a FONTE
+    publicou, e é isso que impede a próxima coleta de recriar o registro
+    errado caso a fonte ainda o exiba.
+    """
+    from application.condicoes import piso_do_valor_condicionado, valor_e_condicionado
+    from application.motor.servico import classificar_promocao
+
+    promocao = await db.get(Promocao, promocao_id)
+    if promocao is None:
+        raise HTTPException(status_code=404, detail="Promoção não encontrada.")
+    if payload.pontuacao is None and payload.unidade_pontuacao is None:
+        raise HTTPException(status_code=422, detail="Informe pontuacao e/ou unidade_pontuacao.")
+
+    logger.warning(
+        "Correção manual da promoção %s: pontuacao %s -> %s, unidade %s -> %s. Motivo: %s",
+        promocao.id, promocao.pontuacao, payload.pontuacao, promocao.unidade_pontuacao,
+        payload.unidade_pontuacao, payload.motivo,
+    )
+    if payload.pontuacao is not None:
+        promocao.pontuacao = payload.pontuacao
+    if payload.unidade_pontuacao is not None:
+        promocao.unidade_pontuacao = payload.unidade_pontuacao
+
+    # Condição e piso são leitura de pontuação + regulamento: mudou a
+    # pontuação, a leitura precisa ser refeita.
+    promocao.valor_condicionado = valor_e_condicionado(
+        promocao.pontuacao, promocao.regulamento_texto, promocao.pontuacao_e_teto
+    )
+    promocao.valor_condicionado_piso = piso_do_valor_condicionado(promocao.pontuacao, promocao.regulamento_texto)
+    await db.flush()
+
+    if promocao.status in ("PENDENTE", "APROVADA"):
+        await classificar_promocao(db, promocao)
+    await db.commit()
+
+    await db.refresh(promocao)
     return promocao

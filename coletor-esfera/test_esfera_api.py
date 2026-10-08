@@ -205,3 +205,49 @@ def test_sem_padrao_de_validade_fica_sem_data():
 def test_url_origem_a_partir_da_rota():
     bruta = parceiro_para_bruta(ITEM_RENNER)
     assert bruta.url_origem == "https://esfera.com.vc/p/renner/e000100180"
+
+
+# Localiza Meoo, textos reais: o mesmo parceiro alterna entre bônus fixo por
+# contrato e taxa por real, e o corpo do regulamento cita o bônus padrão
+# ("a cada carro assinado") nos dois casos.
+_CORPO_MEOO = (
+    "<p>Para juntar pontos, acesse o hotsite.</p><p>• O acúmulo padrão é de 15.000 "
+    "Pontos Esfera a cada carro assinado, podendo ser alterado durante períodos "
+    "promocionais.</p>"
+)
+ITEM_MEOO_BONUS = {
+    "id": "e000100662", "displayName": "Localiza Meoo", "active": True,
+    "esf_accumulationValue": "30000", "esf_accumulationPrefix": "Até",
+    "esf_accumulationFactorDescription": None, "esf_campaignId": None,
+    "route": "/p/localiza-meoo/e000100662",
+    "esf_accumulationGeneralRules": (
+        "<p>* Ganhe 30 mil pontos a cada assinatura no site parceiro; * Condições válidas "
+        "para compras efetuadas de 00h00min do dia 28/09/2026 até 23h59min do dia "
+        "30/09/2026</p>" + _CORPO_MEOO
+    ),
+    "parentCategories": [{"repositoryId": "new02163"}],
+}
+ITEM_MEOO_POR_REAL = {
+    **ITEM_MEOO_BONUS,
+    "esf_accumulationValue": "15",
+    "esf_accumulationFactorDescription": "Real na primeira assinatura",
+    "esf_accumulationGeneralRules": (
+        "<p>* Ganhe 15 pontos a cada R$ 1,00 na primeira mensalidade no site parceiro; "
+        "* Condições válidas para compras efetuadas de 00h00min do dia 07/10/2026 até "
+        "23h59min do dia 09/10/2026</p>" + _CORPO_MEOO
+    ),
+}
+
+
+def test_bonus_fixo_por_contrato_tem_unidade_propria():
+    """Achado de 08/10: "30 mil pontos a cada assinatura" era gravado como
+    pontos_por_real — 30.000 comparado com ofertas de 5 por real.
+    """
+    assert parceiro_para_bruta(ITEM_MEOO_BONUS).unidade_pontuacao == "pontos_por_contrato"
+
+
+def test_campanha_por_real_do_mesmo_parceiro_continua_por_real():
+    """O corpo do regulamento cita "a cada carro assinado" sempre; só a
+    frase de abertura diz qual é a oferta do momento.
+    """
+    assert parceiro_para_bruta(ITEM_MEOO_POR_REAL).unidade_pontuacao == "pontos_por_real"

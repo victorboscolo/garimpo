@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.configuracoes_service import resolver_configuracao
 from application.motor.percentil import valor_comparavel
+from domain.promocoes import UNIDADE_BONUS_POR_CONTRATO
 from application.motor.segmento import escolher_segmento
 from domain.cadastros import Categoria, CategoriaOrigem, ParceiroCategoria
 from domain.promocoes import Promocao
@@ -67,6 +68,9 @@ async def _aprovadas_leves(db: AsyncSession, programa_id, cache=None) -> list:
         ).filter(
             Promocao.programa_id == programa_id,
             Promocao.status.in_(["APROVADA", "PUBLICADA"]),
+            # Bônus fixo por contrato não é taxa por real: fica fora de toda
+            # régua de comparação (ver UNIDADE_BONUS_POR_CONTRATO).
+            Promocao.unidade_pontuacao != UNIDADE_BONUS_POR_CONTRATO,
         )
         return (await db.execute(stmt)).all()
 
@@ -127,6 +131,7 @@ async def _historico_familia(db, parceiro_id, programa_id, dominio_id, excluir_p
         stmt = select(Promocao).filter_by(parceiro_id=parceiro_id, programa_id=programa_id)
         stmt = stmt.filter(Promocao.created_at >= janela_inicio)
         stmt = stmt.filter(Promocao.status.in_(["APROVADA", "PUBLICADA"]))
+        stmt = stmt.filter(Promocao.unidade_pontuacao != UNIDADE_BONUS_POR_CONTRATO)
         if excluir_promocao_id is not None:
             stmt = stmt.filter(Promocao.id != excluir_promocao_id)
 
@@ -228,6 +233,7 @@ async def _valores_do_segmento(db: AsyncSession, categoria_origem_id, programa_i
                 ParceiroCategoria.categoria_origem_id == categoria_origem_id,
                 Promocao.programa_id == programa_id,
                 Promocao.status.in_(["APROVADA", "PUBLICADA"]),
+                Promocao.unidade_pontuacao != UNIDADE_BONUS_POR_CONTRATO,
             )
         )
         return [valor_comparavel(l) for l in (await db.execute(stmt)).all()]
@@ -253,6 +259,7 @@ async def _valores_da_categoria(db: AsyncSession, categoria_id, programa_id, cac
                 func.coalesce(ParceiroCategoria.categoria_id, CategoriaOrigem.categoria_id) == categoria_id,
                 Promocao.programa_id == programa_id,
                 Promocao.status.in_(["APROVADA", "PUBLICADA"]),
+                Promocao.unidade_pontuacao != UNIDADE_BONUS_POR_CONTRATO,
             )
         )
         return [valor_comparavel(l) for l in (await db.execute(stmt)).all()]

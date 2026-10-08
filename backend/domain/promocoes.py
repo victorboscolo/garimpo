@@ -15,6 +15,14 @@ from domain.cadastros import Parceiro, Programa
 from domain.motor import ENTIDADE_PROMOCAO, Classificacao
 
 
+# Bônus fixo por contrato/assinatura ("30 mil pontos a cada assinatura" da
+# Localiza Meoo), em vez de taxa por real gasto. É outra grandeza: gravado
+# como pontos_por_real, 30.000 era comparado com ofertas de 5 ou 10 por real,
+# saía Excepcional e ainda distorcia a régua de todo o segmento (achado de
+# 08/10). O motor não compara ofertas desta unidade com as demais.
+UNIDADE_BONUS_POR_CONTRATO = "pontos_por_contrato"
+
+
 class Promocao(Base):
     __tablename__ = "promocoes"
 

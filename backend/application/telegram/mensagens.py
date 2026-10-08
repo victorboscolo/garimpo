@@ -19,6 +19,8 @@ a hierarquia visual necessária sem nada para escapar.
 """
 from decimal import Decimal
 
+from domain.promocoes import UNIDADE_BONUS_POR_CONTRATO
+
 CATEGORIA_ROTULO = {
     "EXCEPCIONAL": "🔥 EXCEPCIONAL",
     "EXCELENTE": "⭐ EXCELENTE",
@@ -55,9 +57,11 @@ def _pontos(valor: Decimal | None, unidade: str) -> str:
     """"1 ponto por R$ 1", não "1 pontos": concordância errada denuncia texto
     de máquina e tira a credibilidade da mensagem inteira.
     """
-    moeda = UNIDADE_MOEDA.get(unidade, unidade)
     numero = _numero(valor)
     palavra = "ponto" if valor is not None and abs(valor) == 1 else "pontos"
+    if unidade == UNIDADE_BONUS_POR_CONTRATO:
+        return f"{numero} {palavra} por contrato"
+    moeda = UNIDADE_MOEDA.get(unidade, unidade)
     return f"{numero} {palavra} por {moeda}"
 
 
