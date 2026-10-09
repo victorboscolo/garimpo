@@ -29,7 +29,10 @@ from datetime import date, datetime, timedelta
 
 from playwright.async_api import async_playwright
 
-from coletor_emissoes_latam import PERFIL_LATAM, buscar_latam
+import httpx
+
+from chave_api import HEADERS, aquecer
+from coletor_emissoes_latam import PERFIL_LATAM, buscar_latam, enviar_oferta
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("garimpo.buscar_latam_intervalo")
@@ -51,7 +54,11 @@ def _mais_barata(ofertas: dict) -> dict | None:
     return min(candidatas, key=lambda o: o["pontos"])
 
 
-async def buscar_perna(page, origem: str, destino: str, datas: list[date]) -> dict[date, dict | None]:
+async def buscar_perna(page, origem: str, destino: str, datas: list[date], client=None) -> dict[date, dict | None]:
+    """`client` (só com `--gravar`): além de imprimir, grava direto e com
+    parada no Garimpo — as mesmas duas linhas que o coletor agendado grava —
+    pra alimentar o plano de viagem da aba Emissões.
+    """
     resultado: dict[date, dict | None] = {}
     for data_ida in datas:
         try:
@@ -60,6 +67,10 @@ async def buscar_perna(page, origem: str, destino: str, datas: list[date]) -> di
             logger.exception("Falha buscando %s -> %s (%s)", origem, destino, data_ida)
             resultado[data_ida] = None
             continue
+        if client is not None:
+            for oferta in (ofertas.get("direto"), ofertas.get("com_parada")):
+                if oferta is not None:
+                    await enviar_oferta(client, {"origem": origem, "destino": destino}, data_ida, oferta)
         resultado[data_ida] = _mais_barata(ofertas)
         oferta = resultado[data_ida]
         if oferta:
@@ -79,9 +90,14 @@ def _imprimir_tabela(origem: str, destino: str, resultado: dict[date, dict | Non
             print(f"  {data_ida}  sem oferta")
 
 
-async def main(origem: str, destino: str, inicio: date, fim: date) -> None:
-    # Sem aquecer() aqui de propósito: este script nunca fala com a nossa
-    # API (só lê o site da LATAM e imprime), diferente do coletor agendado.
+async def main(
+    origem: str, destino: str, inicio: date, fim: date,
+    gravar: bool = False, dias_volta: int | None = None,
+) -> None:
+    # Sem `--gravar` este script nunca fala com a nossa API (só lê o site da
+    # LATAM e imprime) — por isso o aquecer() só acontece no outro caso.
+    if gravar:
+        aquecer()
     if not os.path.isdir(PERFIL_LATAM):
         logger.error(
             "Perfil %s não existe — o usuário precisa logar manualmente na LATAM "
@@ -100,8 +116,16 @@ async def main(origem: str, destino: str, inicio: date, fim: date) -> None:
         )
         page = context.pages[0] if context.pages else await context.new_page()
 
-        ida = await buscar_perna(page, origem, destino, datas)
-        volta = await buscar_perna(page, destino, origem, datas)
+        # Com `--dias-volta N` a volta é buscada N dias depois de cada ida
+        # (o desenho de um plano de viagem), em vez do mesmo intervalo.
+        datas_volta = [d + timedelta(days=dias_volta) for d in datas] if dias_volta else datas
+        client = httpx.AsyncClient(headers=HEADERS) if gravar else None
+        try:
+            ida = await buscar_perna(page, origem, destino, datas, client)
+            volta = await buscar_perna(page, destino, origem, datas_volta, client)
+        finally:
+            if client is not None:
+                await client.aclose()
 
         await context.close()
 
@@ -115,10 +139,13 @@ if __name__ == "__main__":
     parser.add_argument("--destino", required=True)
     parser.add_argument("--inicio", required=True, help="YYYY-MM-DD")
     parser.add_argument("--fim", required=True, help="YYYY-MM-DD")
+    parser.add_argument("--gravar", action="store_true", help="grava as ofertas no Garimpo (aba Emissões)")
+    parser.add_argument("--dias-volta", type=int, default=None, help="busca a volta N dias depois de cada ida")
     args = parser.parse_args()
 
     asyncio.run(main(
         args.origem, args.destino,
         datetime.strptime(args.inicio, "%Y-%m-%d").date(),
         datetime.strptime(args.fim, "%Y-%m-%d").date(),
+        gravar=args.gravar, dias_volta=args.dias_volta,
     ))

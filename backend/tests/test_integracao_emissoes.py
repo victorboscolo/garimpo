@@ -131,3 +131,52 @@ async def test_definir_rotas_ativas_com_rota_inexistente_nao_altera_nada(client,
     assert resposta.status_code == 404
     rotas = (await client.get("/api/v1/emissoes/rotas")).json()
     assert [(r["origem"], r["destino"]) for r in rotas] == [("GIG", "LIS")]
+
+
+async def test_plano_pareia_ida_e_volta_pela_duracao(client, db, monkeypatch):
+    """Pedido do usuário (09/10): o plano de viagem disponível na aba
+    Emissões — pra cada data de ida, a volta N dias depois, com a coleta
+    mais recente de cada categoria.
+    """
+    from datetime import date
+
+    from application import planos_emissao
+
+    programa, _ = await _seed_programa_e_rota(db, origem="GRU", destino="SCL")
+    db.add(RotaEmissao(programa_id=programa.id, origem="SCL", destino="GRU", fonte="SITE_PRINCIPAL"))
+    await db.commit()
+    monkeypatch.setattr(planos_emissao, "PLANOS", [{
+        "nome": "Teste", "programa_nome": "Azul", "origem": "GRU", "destino": "SCL",
+        "ida_inicio": date(2027, 7, 16), "ida_fim": date(2027, 7, 17), "dias": 6,
+    }])
+
+    async def oferta(origem, destino, data, pontos, paradas):
+        await client.post("/api/v1/emissoes/ofertas", json={
+            "programa_nome": "Azul", "origem": origem, "destino": destino,
+            "data_ida": data, "classe": "ECONOMY", "pontos": pontos, "paradas": paradas,
+        })
+
+    await oferta("GRU", "SCL", "2027-07-16", 40000, 0)
+    # O teste inteiro roda numa transação só, então `now()` daria o mesmo
+    # instante às duas coletas — a antiga é empurrada pra trás à mão.
+    from datetime import datetime, timezone
+    antiga = (await db.execute(select(OfertaEmissao))).scalar_one()
+    antiga.created_at = datetime(2026, 10, 1, tzinfo=timezone.utc)
+    await db.commit()
+    await oferta("GRU", "SCL", "2027-07-16", 33636, 0)   # coleta mais recente vence
+    await oferta("GRU", "SCL", "2027-07-16", 32076, 1)
+    await oferta("SCL", "GRU", "2027-07-22", 33636, 0)
+    await oferta("SCL", "GRU", "2027-07-30", 99999, 0)   # fora do plano
+
+    plano = (await client.get("/api/v1/emissoes/planos")).json()[0]
+
+    assert [(l["data_ida"], l["data_volta"]) for l in plano["linhas"]] == [
+        ("2027-07-16", "2027-07-22"), ("2027-07-17", "2027-07-23"),
+    ]
+    primeira, segunda = plano["linhas"]
+    assert primeira["ida"]["direto"]["pontos"] == 33636
+    assert primeira["ida"]["com_parada"]["pontos"] == 32076
+    assert primeira["volta"]["direto"]["pontos"] == 33636
+    assert primeira["volta"]["com_parada"] is None
+    # Data do plano sem nenhuma oferta gravada: perna vazia, não erro.
+    assert segunda["ida"] is None and segunda["volta"] is None

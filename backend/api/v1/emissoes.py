@@ -98,3 +98,11 @@ async def definir_rotas_ativas(payload: RotasAtivasIn, db: AsyncSession = Depend
             detail={"mensagem": "Rota(s) fora do catálogo — nada foi alterado.", "rotas": resultado["nao_encontradas"]},
         )
     return resultado
+
+
+@router.get("/planos")
+async def planos(db: AsyncSession = Depends(get_db)):
+    """Os planos de viagem acompanhados, com ida e volta pareadas por data
+    — ver `emissoes_service.listar_planos`.
+    """
+    return await emissoes_service.listar_planos(db)

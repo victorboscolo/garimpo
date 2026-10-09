@@ -170,3 +170,79 @@ async def listar_ofertas_atuais(db, programa_nome: str | None = None) -> list[di
         })
 
     return atuais
+
+
+def _resumo_oferta(oferta) -> dict:
+    return {
+        "pontos": oferta.pontos,
+        "paradas": oferta.paradas,
+        "duracao_texto": oferta.duracao_texto,
+        "companhia_operadora": oferta.companhia_operadora,
+        "coletado_em": oferta.created_at,
+    }
+
+
+async def _ofertas_por_data(db, programa_nome: str, origem: str, destino: str, inicio: date, fim: date) -> dict:
+    """{data_ida: {"direto": ..., "com_parada": ...}} com a coleta mais
+    recente de cada categoria, numa perna e num intervalo de datas. Data sem
+    nenhuma oferta gravada simplesmente não aparece no dicionário.
+    """
+    from sqlalchemy import select
+
+    from domain.cadastros import Programa
+    from domain.emissoes import OfertaEmissao, RotaEmissao
+
+    linhas = (await db.execute(
+        select(OfertaEmissao)
+        .join(RotaEmissao, RotaEmissao.id == OfertaEmissao.rota_id)
+        .join(Programa, Programa.id == RotaEmissao.programa_id)
+        .filter(
+            Programa.nome == programa_nome, RotaEmissao.origem == origem, RotaEmissao.destino == destino,
+            OfertaEmissao.data_ida >= inicio, OfertaEmissao.data_ida <= fim,
+        )
+        .order_by(OfertaEmissao.created_at.desc())
+    )).scalars().all()
+
+    por_data: dict = {}
+    for oferta in linhas:
+        categoria = "direto" if oferta.paradas == 0 else "com_parada"
+        do_dia = por_data.setdefault(oferta.data_ida, {"direto": None, "com_parada": None})
+        if do_dia[categoria] is None:  # a primeira vista é a mais recente
+            do_dia[categoria] = _resumo_oferta(oferta)
+    return por_data
+
+
+async def listar_planos(db) -> list[dict]:
+    """Os planos de `application.planos_emissao`, com o preço da ida e da
+    volta de cada par de datas.
+
+    Um par sem oferta numa das pernas vem com `None` nela — o painel mostra
+    "sem oferta", que aqui cobre tanto "a busca não achou assento em milhas"
+    quanto "essa data ainda não foi buscada": a coleta não grava buscas
+    vazias, então os dois casos são indistinguíveis no banco.
+    """
+    from application.planos_emissao import PLANOS, datas_do_plano
+
+    resultado = []
+    for plano in PLANOS:
+        pares = datas_do_plano(plano)
+        idas = await _ofertas_por_data(
+            db, plano["programa_nome"], plano["origem"], plano["destino"], pares[0][0], pares[-1][0]
+        )
+        voltas = await _ofertas_por_data(
+            db, plano["programa_nome"], plano["destino"], plano["origem"], pares[0][1], pares[-1][1]
+        )
+        coletas = [
+            o["coletado_em"] for por_data in (idas, voltas) for do_dia in por_data.values()
+            for o in do_dia.values() if o is not None
+        ]
+        resultado.append({
+            "nome": plano["nome"], "programa_nome": plano["programa_nome"],
+            "origem": plano["origem"], "destino": plano["destino"], "dias": plano["dias"],
+            "coletado_em": max(coletas) if coletas else None,
+            "linhas": [
+                {"data_ida": ida, "data_volta": volta, "ida": idas.get(ida), "volta": voltas.get(volta)}
+                for ida, volta in pares
+            ],
+        })
+    return resultado

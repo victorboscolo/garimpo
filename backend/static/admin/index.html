@@ -974,6 +974,49 @@
   .opcao-detalhe { font-size: var(--t-xs); color: var(--tinta-2); margin-top: 3px; }
   .opcao-sem-oferta { font-size: var(--t-sm); color: var(--tinta-2); font-style: italic; }
 
+  /* ---- Emissões: plano de viagem (ida e volta pareadas) ---- */
+
+  .plano-resumo { display: flex; flex-wrap: wrap; gap: 10px; margin: 4px 0 var(--esp-2); }
+  .plano-resumo .opcao-emissao { flex: 1 1 220px; }
+  .plano-resumo .melhor { border-color: var(--excelente-forte); background: var(--excelente-bg); }
+
+  /* Tabela larga rola dentro do próprio card — a página nunca rola de lado. */
+  .plano-rolagem { overflow-x: auto; margin: 0 calc(-1 * var(--pad-card)); padding: 0 var(--pad-card); }
+  .plano-tabela {
+    width: 100%;
+    min-width: 720px;
+    border-collapse: collapse;
+    font-size: var(--t-sm);
+  }
+  .plano-tabela th {
+    text-align: right;
+    font-size: var(--t-xs);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--tinta-2);
+    padding: 8px 10px;
+    border-bottom: 2px solid var(--linha);
+    white-space: nowrap;
+  }
+  .plano-tabela th:first-child, .plano-tabela td:first-child { text-align: left; }
+  .plano-tabela th.grupo { text-align: center; border-bottom: none; padding-bottom: 0; }
+  .plano-tabela td {
+    text-align: right;
+    padding: 10px;
+    border-bottom: 1px solid var(--linha);
+    font-family: var(--fonte-bilhete);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .plano-tabela td.datas { font-family: var(--fonte); font-weight: 600; color: var(--tinta); }
+  .plano-tabela td.datas small { display: block; font-weight: 400; color: var(--tinta-2); font-size: var(--t-xs); }
+  .plano-tabela td.vazio { font-family: var(--fonte); font-style: italic; color: var(--tinta-2); }
+  .plano-tabela td.total { font-weight: 700; color: var(--tinta); border-left: 1px solid var(--linha); }
+  .plano-tabela tr.melhor td { background: var(--excelente-bg); }
+  .plano-tabela tr.melhor td.total { color: var(--excelente); }
+  .plano-tabela tr:last-child td { border-bottom: none; }
+
   /* ---- Tela estreita: as ações descem pra baixo do conteúdo ---- */
 
   @media (max-width: 640px) {
@@ -1228,6 +1271,10 @@ function esc(valor) {
 }
 
 async function carregar() {
+  // A grade de Destaques é desligada aqui, antes de qualquer desvio: Publicar,
+  // Saúde e Emissões têm carregadores próprios, e abertos logo depois de
+  // Destaques herdavam as colunas estreitas dela.
+  document.getElementById("lista").classList.toggle("lista-grid", filtroAtual === "__DESTAQUES__");
   if (filtroAtual === "__PUBLICAR__") return carregarFila();
   if (filtroAtual === "__SAUDE__") return carregarSaude();
   if (filtroAtual === "__EMISSOES__") return carregarEmissoes();
@@ -1599,6 +1646,103 @@ function renderOpcaoEmissao(rotulo, o) {
   `;
 }
 
+/* ---- Plano de viagem: ida e volta pareadas ---- */
+
+const DIA_DA_SEMANA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+
+// "2027-07-16" -> "16/07 · sex". Montada à mão a partir do texto: passar a
+// data por `new Date()` a leria como meia-noite UTC e, no fuso do Brasil,
+// mostraria o dia anterior.
+function formatDiaVoo(isoDate) {
+  const [ano, mes, dia] = isoDate.split("-").map(Number);
+  const semana = DIA_DA_SEMANA[new Date(Date.UTC(ano, mes - 1, dia)).getUTCDay()];
+  return `${String(dia).padStart(2, "0")}/${String(mes).padStart(2, "0")} · ${semana}`;
+}
+
+function milhas(n) { return n.toLocaleString("pt-BR"); }
+
+// Menor preço de uma perna entre direto e com parada; null sem oferta.
+function menorDaPerna(perna) {
+  if (!perna) return null;
+  const valores = [perna.direto, perna.com_parada].filter(Boolean).map(o => o.pontos);
+  return valores.length ? Math.min(...valores) : null;
+}
+
+function celulaPreco(oferta) {
+  if (!oferta) return `<td class="vazio">sem oferta</td>`;
+  const detalhe = [oferta.duracao_texto, nomeCompanhia(oferta.companhia_operadora)].filter(Boolean).join(" · ");
+  return `<td title="${esc(detalhe)}">${milhas(oferta.pontos)}</td>`;
+}
+
+function renderPlano(plano) {
+  const linhas = plano.linhas.map(l => {
+    const ida = menorDaPerna(l.ida), volta = menorDaPerna(l.volta);
+    const idaDireto = l.ida && l.ida.direto ? l.ida.direto.pontos : null;
+    const voltaDireto = l.volta && l.volta.direto ? l.volta.direto.pontos : null;
+    return {
+      ...l,
+      total: ida !== null && volta !== null ? ida + volta : null,
+      totalDireto: idaDireto !== null && voltaDireto !== null ? idaDireto + voltaDireto : null,
+    };
+  });
+  const menor = (campo) => {
+    const valores = linhas.map(l => l[campo]).filter(v => v !== null);
+    return valores.length ? Math.min(...valores) : null;
+  };
+  const menorTotal = menor("total"), menorDireto = menor("totalDireto");
+  const datasCom = (campo, valor) => linhas.filter(l => l[campo] === valor)
+    .map(l => `${formatDiaVoo(l.data_ida).split(" ")[0]} → ${formatDiaVoo(l.data_volta).split(" ")[0]}`);
+
+  const resumo = menorTotal === null ? "" : `
+    <div class="plano-resumo">
+      <div class="opcao-emissao melhor">
+        <div class="opcao-rotulo">Menor total, ida e volta</div>
+        <div class="opcao-preco">${milhas(menorTotal)} <span class="opcao-unidade">milhas</span></div>
+        <div class="opcao-detalhe">${datasCom("total", menorTotal).length} par(es) de datas com esse valor</div>
+      </div>
+      ${menorDireto === null ? "" : `
+      <div class="opcao-emissao">
+        <div class="opcao-rotulo">Menor total só com voo direto</div>
+        <div class="opcao-preco">${milhas(menorDireto)} <span class="opcao-unidade">milhas</span></div>
+        <div class="opcao-detalhe">${esc(datasCom("totalDireto", menorDireto).join(" · "))}</div>
+      </div>`}
+    </div>`;
+
+  const corpo = linhas.map(l => `
+    <tr class="${l.totalDireto !== null && l.totalDireto === menorDireto ? "melhor" : ""}">
+      <td class="datas">${formatDiaVoo(l.data_ida)}<small>volta ${formatDiaVoo(l.data_volta)}</small></td>
+      ${celulaPreco(l.ida && l.ida.direto)}
+      ${celulaPreco(l.ida && l.ida.com_parada)}
+      ${celulaPreco(l.volta && l.volta.direto)}
+      ${celulaPreco(l.volta && l.volta.com_parada)}
+      ${l.total === null ? `<td class="total vazio">—</td>` : `<td class="total">${milhas(l.total)}</td>`}
+      ${l.totalDireto === null ? `<td class="vazio">—</td>` : `<td>${milhas(l.totalDireto)}</td>`}
+    </tr>`).join("");
+
+  return `
+    <div class="card-main">
+      <div class="card-top">
+        <span class="parceiro-nome rota">${esc(plano.origem)} ${icone("aviao")} ${esc(plano.destino)}</span>
+        <span class="programa-tag">${esc(plano.programa_nome)}</span>
+        <span class="valor-emissao-data">${plano.dias} dias de viagem · Economy</span>
+      </div>
+      <div class="justificativa">${esc(plano.nome)}. Milhas por perna, sem a taxa de embarque.</div>
+      ${resumo}
+      <div class="plano-rolagem">
+        <table class="plano-tabela">
+          <thead>
+            <tr><th></th><th class="grupo" colspan="2">Ida</th><th class="grupo" colspan="2">Volta</th><th class="grupo" colspan="2">Total</th></tr>
+            <tr><th>Datas</th><th>Direto</th><th>Com parada</th><th>Direto</th><th>Com parada</th><th>Menor</th><th>Só direto</th></tr>
+          </thead>
+          <tbody>${corpo}</tbody>
+        </table>
+      </div>
+      <div class="coletado-em">${plano.coletado_em
+        ? `Coletado em ${formatData(plano.coletado_em)}. "Sem oferta" pode ser data sem assento em milhas ou data ainda não buscada.`
+        : "Nenhuma data deste plano foi buscada ainda."}</div>
+    </div>`;
+}
+
 async function carregarEmissoes() {
   const lista = document.getElementById("lista");
   const contador = document.getElementById("contador");
@@ -1608,24 +1752,46 @@ async function carregarEmissoes() {
   lista.innerHTML = "";
   contador.textContent = "Carregando emissões…";
 
-  let ofertas;
+  let ofertas, planos;
   try {
-    ofertas = await (await fetch("/api/v1/emissoes/ofertas")).json();
+    [ofertas, planos] = await Promise.all([
+      fetch("/api/v1/emissoes/ofertas").then(r => r.json()),
+      fetch("/api/v1/emissoes/planos").then(r => r.json()),
+    ]);
   } catch (e) {
     mostrarErroDeCarga();
     return;
   }
 
-  if (ofertas.length === 0) {
+  // Rota coberta por um plano não ganha também o card "última coleta": ele
+  // mostraria uma data qualquer do plano (a última buscada), solta, ao lado
+  // da tabela que já traz todas.
+  const noPlano = new Set(planos.flatMap(p => [
+    `${p.programa_nome}|${p.origem}|${p.destino}`, `${p.programa_nome}|${p.destino}|${p.origem}`,
+  ]));
+  const rotas = agruparPorRota(ofertas)
+    .filter(r => !noPlano.has(`${r.programa_nome}|${r.origem}|${r.destino}`))
+    .sort((a, b) =>
+      a.programa_nome.localeCompare(b.programa_nome) || a.origem.localeCompare(b.origem) || a.destino.localeCompare(b.destino)
+    );
+
+  if (rotas.length === 0 && planos.length === 0) {
     contador.textContent = "0 rotas com oferta ainda";
     lista.innerHTML = estadoVazio("aviao", "Nenhuma oferta coletada ainda.");
     return;
   }
 
-  const rotas = agruparPorRota(ofertas).sort((a, b) =>
-    a.programa_nome.localeCompare(b.programa_nome) || a.origem.localeCompare(b.origem) || a.destino.localeCompare(b.destino)
-  );
-  contador.textContent = `${rotas.length} rota${rotas.length === 1 ? "" : "s"} com oferta, só em milhas`;
+  const partes = [];
+  if (planos.length) partes.push(`${planos.length} plano${planos.length === 1 ? "" : "s"} de viagem`);
+  if (rotas.length) partes.push(`${rotas.length} rota${rotas.length === 1 ? "" : "s"} com oferta`);
+  contador.textContent = `${partes.join(" e ")}, só em milhas`;
+
+  for (const plano of planos) {
+    const card = document.createElement("div");
+    card.className = "card sem-selecao";
+    card.innerHTML = renderPlano(plano);
+    lista.appendChild(card);
+  }
 
   for (const rota of rotas) {
     const opcoes = [rota.categorias.DIRETO, rota.categorias.COM_PARADA].filter(Boolean);
